@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * USB HOST XHCI Controller
  *
@@ -10,8 +11,6 @@
  * Copyright (C) 2013 Samsung Electronics Co.Ltd
  * Authors: Vivek Gautam <gautam.vivek@samsung.com>
  *	    Vikas Sajjan <vikas.sajjan@samsung.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef HOST_XHCI_H_
@@ -1230,7 +1229,6 @@ struct xhci_ctrl {
 	struct xhci_erst_entry entry[ERST_NUM_SEGS];
 	struct xhci_scratchpad *scratchpad;
 	struct xhci_virt_device *devs[MAX_HC_SLOTS];
-	struct usb_hub_descriptor hub;
 	int rootdev;
 };
 

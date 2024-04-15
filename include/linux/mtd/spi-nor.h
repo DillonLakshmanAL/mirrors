@@ -26,7 +26,6 @@
 #define SNOR_MFR_SPANSION	CFI_MFR_AMD
 #define SNOR_MFR_SST		CFI_MFR_SST
 #define SNOR_MFR_WINBOND	0xef /* Also used by some Spansion */
-#define SNOR_MFR_NORMEM		CFI_MFR_NORMEM
 
 /*
  * Note on opcode nomenclature: some opcodes have a format like
@@ -40,7 +39,6 @@
 #define SPINOR_OP_WREN		0x06	/* Write enable */
 #define SPINOR_OP_RDSR		0x05	/* Read status register */
 #define SPINOR_OP_WRSR		0x01	/* Write status register 1 byte */
-#define SPINOR_OP_WRCR		0x31	/* Write configure register 1 byte */
 #define SPINOR_OP_RDSR2		0x3f	/* Read status register 2 */
 #define SPINOR_OP_WRSR2		0x3e	/* Write status register 2 */
 #define SPINOR_OP_READ		0x03	/* Read data bytes (low frequency) */
@@ -143,8 +141,6 @@
 
 /* Enhanced Volatile Configuration Register bits */
 #define EVCR_QUAD_EN_MICRON	BIT(7)	/* Micron Quad I/O */
-
-#define SR_QUAD_EN_NORMEM	BIT(2)	/* NORMEM Quad I/O */
 
 /* Flag Status Register bits */
 #define FSR_READY		BIT(7)	/* Device status, 0 = Busy, 1 = Ready */
@@ -258,7 +254,13 @@ enum spi_nor_option_flags {
  */
 struct flash_info;
 
-/* TODO: Remove, once all users of spi_flash interface are moved to MTD */
+/*
+ * TODO: Remove, once all users of spi_flash interface are moved to MTD
+ *
+ * struct spi_flash {
+ *	Defined below (keep this text to enable searching for spi_flash decl)
+ * }
+ */
 #define spi_flash spi_nor
 
 /**
@@ -267,6 +269,7 @@ struct flash_info;
  * @lock:		the lock for the read/write/erase/lock/unlock operations
  * @dev:		point to a spi device, or a spi nor controller device.
  * @info:		spi-nor part JDEC MFR id and other info
+ * @manufacturer_sfdp:	manufacturer specific SFDP table
  * @page_size:		the page size of the SPI NOR
  * @addr_width:		number of address bytes
  * @erase_opcode:	the opcode for erasing a sector
@@ -305,6 +308,7 @@ struct spi_nor {
 	struct udevice		*dev;
 	struct spi_slave	*spi;
 	const struct flash_info	*info;
+	u8			*manufacturer_sfdp;
 	u32			page_size;
 	u8			addr_width;
 	u8			erase_opcode;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * f_sdp.c -- USB HID Serial Download Protocol
  *
@@ -13,13 +14,12 @@
  * SKIP_DCD_HEADER are only stubs.
  *
  * Parts of the implementation are based on f_dfu and f_thor.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <errno.h>
 #include <common.h>
 #include <console.h>
+#include <env.h>
 #include <malloc.h>
 
 #include <linux/usb/ch9.h>
@@ -726,7 +726,7 @@ static void sdp_handle_in_ep(struct spl_image_info *spl_image)
 			jump_to_image_no_args(&spl_image);
 #else
 			/* In U-Boot, allow jumps to scripts */
-			source(sdp_func->jmp_address, "script@1");
+			image_source_script(sdp_func->jmp_address, "script@1");
 #endif
 		}
 

@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
- * Copyright 2017 NXP
+ * Copyright 2017-2019 NXP
  * Copyright 2014-2015 Freescale Semiconductor, Inc.
  * Layerscape PCIe driver
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -226,6 +225,9 @@ static int ls_pcie_addr_valid(struct ls_pcie *pcie, pci_dev_t bdf)
 {
 	struct udevice *bus = pcie->bus;
 
+	if (pcie->mode == PCI_HEADER_TYPE_NORMAL)
+		return -ENODEV;
+
 	if (!pcie->enabled)
 		return -ENXIO;
 
@@ -241,82 +243,48 @@ static int ls_pcie_addr_valid(struct ls_pcie *pcie, pci_dev_t bdf)
 	return 0;
 }
 
-void *ls_pcie_conf_address(struct ls_pcie *pcie, pci_dev_t bdf,
-				   int offset)
+int ls_pcie_conf_address(const struct udevice *bus, pci_dev_t bdf,
+			 uint offset, void **paddress)
 {
-	struct udevice *bus = pcie->bus;
+	struct ls_pcie *pcie = dev_get_priv(bus);
 	u32 busdev;
 
-	if (PCI_BUS(bdf) == bus->seq)
-		return pcie->dbi + offset;
+	if (ls_pcie_addr_valid(pcie, bdf))
+		return -EINVAL;
 
-	busdev = PCIE_ATU_BUS(PCI_BUS(bdf)) |
+	if (PCI_BUS(bdf) == bus->seq) {
+		*paddress = pcie->dbi + offset;
+		return 0;
+	}
+
+	busdev = PCIE_ATU_BUS(PCI_BUS(bdf) - bus->seq) |
 		 PCIE_ATU_DEV(PCI_DEV(bdf)) |
 		 PCIE_ATU_FUNC(PCI_FUNC(bdf));
 
 	if (PCI_BUS(bdf) == bus->seq + 1) {
 		ls_pcie_cfg0_set_busdev(pcie, busdev);
-		return pcie->cfg0 + offset;
+		*paddress = pcie->cfg0 + offset;
 	} else {
 		ls_pcie_cfg1_set_busdev(pcie, busdev);
-		return pcie->cfg1 + offset;
+		*paddress = pcie->cfg1 + offset;
 	}
+	return 0;
 }
 
-static int ls_pcie_read_config(struct udevice *bus, pci_dev_t bdf,
+static int ls_pcie_read_config(const struct udevice *bus, pci_dev_t bdf,
 			       uint offset, ulong *valuep,
 			       enum pci_size_t size)
 {
-	struct ls_pcie *pcie = dev_get_priv(bus);
-	void *address;
-
-	if (ls_pcie_addr_valid(pcie, bdf)) {
-		*valuep = pci_get_ff(size);
-		return 0;
-	}
-
-	address = ls_pcie_conf_address(pcie, bdf, offset);
-
-	switch (size) {
-	case PCI_SIZE_8:
-		*valuep = readb(address);
-		return 0;
-	case PCI_SIZE_16:
-		*valuep = readw(address);
-		return 0;
-	case PCI_SIZE_32:
-		*valuep = readl(address);
-		return 0;
-	default:
-		return -EINVAL;
-	}
+	return pci_generic_mmap_read_config(bus, ls_pcie_conf_address,
+					    bdf, offset, valuep, size);
 }
 
 static int ls_pcie_write_config(struct udevice *bus, pci_dev_t bdf,
 				uint offset, ulong value,
 				enum pci_size_t size)
 {
-	struct ls_pcie *pcie = dev_get_priv(bus);
-	void *address;
-
-	if (ls_pcie_addr_valid(pcie, bdf))
-		return 0;
-
-	address = ls_pcie_conf_address(pcie, bdf, offset);
-
-	switch (size) {
-	case PCI_SIZE_8:
-		writeb(value, address);
-		return 0;
-	case PCI_SIZE_16:
-		writew(value, address);
-		return 0;
-	case PCI_SIZE_32:
-		writel(value, address);
-		return 0;
-	default:
-		return -EINVAL;
-	}
+	return pci_generic_mmap_write_config(bus, ls_pcie_conf_address,
+					     bdf, offset, value, size);
 }
 
 /* Clear multi-function bit */
@@ -344,20 +312,9 @@ static void ls_pcie_drop_msg_tlp(struct ls_pcie *pcie)
 /* Disable all bars in RC mode */
 static void ls_pcie_disable_bars(struct ls_pcie *pcie)
 {
-	u32 sriov;
-
-	sriov = in_le32(pcie->dbi + PCIE_SRIOV);
-
-	/*
-	 * TODO: For PCIe controller with SRIOV, the method to disable bars
-	 * is different and more complex, so will add later.
-	 */
-	if (PCI_EXT_CAP_ID(sriov) == PCI_EXT_CAP_ID_SRIOV)
-		return;
-
 	dbi_writel(pcie, 0, PCIE_CS2_OFFSET + PCI_BASE_ADDRESS_0);
 	dbi_writel(pcie, 0, PCIE_CS2_OFFSET + PCI_BASE_ADDRESS_1);
-	dbi_writel(pcie, 0, PCIE_CS2_OFFSET + PCI_ROM_ADDRESS1);
+	dbi_writel(pcie, 0xfffffffe, PCIE_CS2_OFFSET + PCI_ROM_ADDRESS1);
 }
 
 static void ls_pcie_setup_ctrl(struct ls_pcie *pcie)
@@ -371,6 +328,7 @@ static void ls_pcie_setup_ctrl(struct ls_pcie *pcie)
 	dbi_writel(pcie, 0, PCIE_DBI_RO_WR_EN);
 
 	ls_pcie_disable_bars(pcie);
+	pcie->stream_id_cur = 0;
 }
 
 static void ls_pcie_ep_setup_atu(struct ls_pcie *pcie)
@@ -438,7 +396,11 @@ static void ls_pcie_ep_setup_bars(void *bar_base)
 
 static void ls_pcie_ep_enable_cfg(struct ls_pcie *pcie)
 {
-	ctrl_writel(pcie, PCIE_CONFIG_READY, PCIE_PF_CONFIG);
+	u32 config;
+
+	config = ctrl_readl(pcie,  PCIE_PF_CONFIG);
+	config |= PCIE_CONFIG_READY;
+	ctrl_writel(pcie, config, PCIE_PF_CONFIG);
 }
 
 static void ls_pcie_setup_ep(struct ls_pcie *pcie)
@@ -473,9 +435,7 @@ static int ls_pcie_probe(struct udevice *dev)
 	struct ls_pcie *pcie = dev_get_priv(dev);
 	const void *fdt = gd->fdt_blob;
 	int node = dev_of_offset(dev);
-	u8 header_type;
 	u16 link_sta;
-	bool ep_mode;
 	uint svr;
 	int ret;
 	fdt_size_t cfg_size;
@@ -559,15 +519,15 @@ static int ls_pcie_probe(struct udevice *dev)
 	      (unsigned long)pcie->ctrl, (unsigned long)pcie->cfg0,
 	      pcie->big_endian);
 
-	header_type = readb(pcie->dbi + PCI_HEADER_TYPE);
-	ep_mode = (header_type & 0x7f) == PCI_HEADER_TYPE_NORMAL;
-	printf("PCIe%u: %s %s", pcie->idx, dev->name,
-	       ep_mode ? "Endpoint" : "Root Complex");
+	pcie->mode = readb(pcie->dbi + PCI_HEADER_TYPE) & 0x7f;
 
-	if (ep_mode)
-		ls_pcie_setup_ep(pcie);
-	else
-		ls_pcie_setup_ctrl(pcie);
+	if (pcie->mode == PCI_HEADER_TYPE_NORMAL) {
+		printf("PCIe%u: %s %s", pcie->idx, dev->name, "Endpoint");
+			ls_pcie_setup_ep(pcie);
+	} else {
+		printf("PCIe%u: %s %s", pcie->idx, dev->name, "Root Complex");
+			ls_pcie_setup_ctrl(pcie);
+	}
 
 	if (!ls_pcie_link_up(pcie)) {
 		/* Let the user know there's no PCIe link */

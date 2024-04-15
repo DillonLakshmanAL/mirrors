@@ -22,8 +22,6 @@
 #include <asm/state.h>
 #include <dm/device-internal.h>
 
-DECLARE_GLOBAL_DATA_PTR;
-
 #ifndef CONFIG_SPI_IDLE_VAL
 # define CONFIG_SPI_IDLE_VAL 0xFF
 #endif
@@ -119,7 +117,7 @@ static int sandbox_cs_info(struct udevice *bus, uint cs,
 {
 	/* Always allow activity on CS 0 */
 	if (cs >= 1)
-		return -ENODEV;
+		return -EINVAL;
 
 	return 0;
 }

@@ -1,12 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2013 Google, Inc
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
+#include <command.h>
 #include <dm.h>
 #include <fdtdec.h>
+#include <mapmem.h>
+#include <os.h>
 #include <spi.h>
 #include <spi_flash.h>
 #include <asm/state.h>
@@ -15,7 +17,7 @@
 #include <dm/util.h>
 #include <test/ut.h>
 
-/* Test that sandbox SPI flash works correctly */
+/* Simple test of sandbox SPI flash */
 static int dm_test_spi_flash(struct unit_test_state *uts)
 {
 	struct udevice *dev, *emul;
@@ -87,7 +89,7 @@ static int dm_test_spi_flash_func(struct unit_test_state *uts)
 	 * benefit is worth the extra complexity.
 	 */
 	ut_asserteq(0, run_command_list(
-		"sb save hostfs - 0 spi.bin 200000;"
+		"host save hostfs - 0 spi.bin 200000;"
 		"sf probe;"
 		"sf test 0 10000", -1,  0));
 	/*
@@ -98,4 +100,4 @@ static int dm_test_spi_flash_func(struct unit_test_state *uts)
 
 	return 0;
 }
-DM_TEST(dm_test_spi_flash, DM_TESTF_SCAN_PDATA | DM_TESTF_SCAN_FDT);
+DM_TEST(dm_test_spi_flash_func, DM_TESTF_SCAN_PDATA | DM_TESTF_SCAN_FDT);

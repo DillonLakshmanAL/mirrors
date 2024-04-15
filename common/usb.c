@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Most of this source has been derived from the Linux USB
  * project:
@@ -13,8 +14,6 @@
  *
  * Adapted for U-Boot:
  * (C) Copyright 2001 Denis Peter, MPL AG Switzerland
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 /*
@@ -29,6 +28,7 @@
 #include <common.h>
 #include <command.h>
 #include <dm.h>
+#include <malloc.h>
 #include <memalign.h>
 #include <asm/processor.h>
 #include <linux/compiler.h>
@@ -172,6 +172,12 @@ int usb_detect_change(void)
 	return change;
 }
 
+/* Lock or unlock async schedule on the controller */
+__weak int usb_lock_async(struct usb_device *dev, int lock)
+{
+	return 0;
+}
+
 /*
  * disables the asynch behaviour of the control message. This is used for data
  * transfers that uses the exclusiv access to the control and bulk messages.
@@ -255,9 +261,6 @@ int usb_control_msg(struct usb_device *dev, unsigned int pipe,
 	}
 	if (dev->status)
 		return -1;
-
-	if(dev->descriptor.idVendor == 0x058f && dev->descriptor.idProduct == 0x6387)
-		udelay(200);
 
 	return dev->act_len;
 
@@ -443,12 +446,13 @@ static int usb_parse_config(struct usb_device *dev,
 			}
 			break;
 		case USB_DT_ENDPOINT:
-			if (head->bLength != USB_DT_ENDPOINT_SIZE) {
+			if (head->bLength != USB_DT_ENDPOINT_SIZE &&
+			    head->bLength != USB_DT_ENDPOINT_AUDIO_SIZE) {
 				printf("ERROR: Invalid USB EP length (%d)\n",
 					head->bLength);
 				break;
 			}
-			if (index + USB_DT_ENDPOINT_SIZE >
+			if (index + head->bLength >
 			    dev->config.desc.wTotalLength) {
 				puts("USB EP descriptor overflowed buffer!\n");
 				break;
@@ -519,20 +523,6 @@ static int usb_parse_config(struct usb_device *dev,
 		}
 		index += head->bLength;
 		head = (struct usb_descriptor_header *)&buffer[index];
-	}
-
-	/**
-	 * Some odd devices respond the Endpoint descriptor items are less
-	 * then the bNumEndpoints in Interface descriptor, so fix it here.
-	 */
-	for (ifno = 0; ifno < dev->config.no_of_if; ifno++) {
-		if_desc = &dev->config.if_desc[ifno];
-		if (if_desc->desc.bNumEndpoints != if_desc->no_of_ep) {
-			printf("WARN: interface %d has %d endpoint descriptor, "
-			       "different from the interface descriptor's value: %d\n",
-			       ifno, if_desc->no_of_ep, if_desc->desc.bNumEndpoints);
-			if_desc->desc.bNumEndpoints = if_desc->no_of_ep;
-		}
 	}
 	return 0;
 }

@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2013, Google Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifdef USE_HOSTCC
@@ -10,7 +9,6 @@
 #else
 #include <common.h>
 #include <malloc.h>
-#include <optee_include/OpteeClientInterface.h>
 DECLARE_GLOBAL_DATA_PTR;
 #endif /* !USE_HOSTCC*/
 #include <image.h>
@@ -31,23 +29,12 @@ void *image_get_host_blob(void)
 }
 #endif
 
-static const uint8_t sha1_der_prefix_data[SHA1_DER_LEN] = {
-	0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e,
-	0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14
-};
-
-static const uint8_t sha256_der_prefix_data[SHA256_DER_LEN] = {
-	0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
-	0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
-	0x00, 0x04, 0x20
-};
-
 struct checksum_algo checksum_algos[] = {
 	{
 		.name = "sha1",
 		.checksum_len = SHA1_SUM_LEN,
 		.der_len = SHA1_DER_LEN,
-		.der_prefix = sha1_der_prefix_data,
+		.der_prefix = sha1_der_prefix,
 #if IMAGE_ENABLE_SIGN
 		.calculate_sign = EVP_sha1,
 #endif
@@ -57,7 +44,7 @@ struct checksum_algo checksum_algos[] = {
 		.name = "sha256",
 		.checksum_len = SHA256_SUM_LEN,
 		.der_len = SHA256_DER_LEN,
-		.der_prefix = sha256_der_prefix_data,
+		.der_prefix = sha256_der_prefix,
 #if IMAGE_ENABLE_SIGN
 		.calculate_sign = EVP_sha256,
 #endif
@@ -102,6 +89,21 @@ struct checksum_algo *image_get_checksum_algo(const char *full_name)
 	int i;
 	const char *name;
 
+#if !defined(USE_HOSTCC) && defined(CONFIG_NEEDS_MANUAL_RELOC)
+	static bool done;
+
+	if (!done) {
+		done = true;
+		for (i = 0; i < ARRAY_SIZE(checksum_algos); i++) {
+			checksum_algos[i].name += gd->reloc_off;
+#if IMAGE_ENABLE_SIGN
+			checksum_algos[i].calculate_sign += gd->reloc_off;
+#endif
+			checksum_algos[i].calculate += gd->reloc_off;
+		}
+	}
+#endif
+
 	for (i = 0; i < ARRAY_SIZE(checksum_algos); i++) {
 		name = checksum_algos[i].name;
 		/* Make sure names match and next char is a comma */
@@ -117,6 +119,20 @@ struct crypto_algo *image_get_crypto_algo(const char *full_name)
 {
 	int i;
 	const char *name;
+
+#if !defined(USE_HOSTCC) && defined(CONFIG_NEEDS_MANUAL_RELOC)
+	static bool done;
+
+	if (!done) {
+		done = true;
+		for (i = 0; i < ARRAY_SIZE(crypto_algos); i++) {
+			crypto_algos[i].name += gd->reloc_off;
+			crypto_algos[i].sign += gd->reloc_off;
+			crypto_algos[i].add_verify_data += gd->reloc_off;
+			crypto_algos[i].verify += gd->reloc_off;
+		}
+	}
+#endif
 
 	/* Move name to after the comma */
 	name = strchr(full_name, ',');
@@ -198,6 +214,11 @@ static int fit_image_setup_verify(struct image_sign_info *info,
 	char *algo_name;
 	const char *padding_name;
 
+	if (fdt_totalsize(fit) > CONFIG_FIT_SIGNATURE_MAX_SIZE) {
+		*err_msgp = "Total size too large";
+		return 1;
+	}
+
 	if (fit_image_hash_get_algo(fit, noffset, &algo_name)) {
 		*err_msgp = "Can't get hash algo property";
 		return -1;
@@ -208,7 +229,7 @@ static int fit_image_setup_verify(struct image_sign_info *info,
 		padding_name = RSA_DEFAULT_PADDING_NAME;
 
 	memset(info, '\0', sizeof(*info));
-	info->keyname = fdt_getprop(fit, noffset, "key-name-hint", NULL);
+	info->keyname = fdt_getprop(fit, noffset, FIT_KEY_HINT, NULL);
 	info->fit = (void *)fit;
 	info->node_offset = noffset;
 	info->name = algo_name;
@@ -219,7 +240,7 @@ static int fit_image_setup_verify(struct image_sign_info *info,
 	info->required_keynode = required_keynode;
 	printf("%s:%s", algo_name, info->keyname);
 
-	if (!info->checksum || !info->crypto) {
+	if (!info->checksum || !info->crypto || !info->padding) {
 		*err_msgp = "Unknown signature algorithm";
 		return -1;
 	}
@@ -289,8 +310,7 @@ static int fit_image_verify_sig(const void *fit, int image_noffset,
 		goto error;
 	}
 
-	if (verified)
-		return 0;
+	return verified ? 0 : -EPERM;
 
 error:
 	printf(" error!\n%s for '%s' hash node in '%s' image node\n",
@@ -311,15 +331,17 @@ int fit_image_verify_required_sigs(const void *fit, int image_noffset,
 	*no_sigsp = 1;
 	sig_node = fdt_subnode_offset(sig_blob, 0, FIT_SIG_NODENAME);
 	if (sig_node < 0) {
-		printf("No RSA key found\n");
-		return -EINVAL;
+		debug("%s: No signature node found: %s\n", __func__,
+		      fdt_strerror(sig_node));
+		return 0;
 	}
 
 	fdt_for_each_subnode(noffset, sig_blob, sig_node) {
 		const char *required;
 		int ret;
 
-		required = fdt_getprop(sig_blob, noffset, "required", NULL);
+		required = fdt_getprop(sig_blob, noffset, FIT_KEY_REQUIRED,
+				       NULL);
 		if (!required || strcmp(required, "image"))
 			continue;
 		ret = fit_image_verify_sig(fit, image_noffset, data, size,
@@ -338,20 +360,39 @@ int fit_image_verify_required_sigs(const void *fit, int image_noffset,
 	return 0;
 }
 
-int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
-			 char **err_msgp)
+/**
+ * fit_config_check_sig() - Check the signature of a config
+ *
+ * @fit: FIT to check
+ * @noffset: Offset of configuration node (e.g. /configurations/conf-1)
+ * @required_keynode:	Offset in the control FDT of the required key node,
+ *			if any. If this is given, then the configuration wil not
+ *			pass verification unless that key is used. If this is
+ *			-1 then any signature will do.
+ * @conf_noffset: Offset of the configuration subnode being checked (e.g.
+ *	 /configurations/conf-1/kernel)
+ * @err_msgp:		In the event of an error, this will be pointed to a
+ *			help error string to display to the user.
+ * @return 0 if all verified ok, <0 on error
+ */
+static int fit_config_check_sig(const void *fit, int noffset,
+				int required_keynode, int conf_noffset,
+				char **err_msgp)
 {
 	char * const exc_prop[] = {"data"};
 	const char *prop, *end, *name;
 	struct image_sign_info info;
 	const uint32_t *strings;
+	const char *config_name;
 	uint8_t *fit_value;
 	int fit_value_len;
+	bool found_config;
 	int max_regions;
 	int i, prop_len;
 	char path[200];
 	int count;
 
+	config_name = fit_get_name(fit, conf_noffset, NULL);
 	debug("%s: fdt=%p, conf='%s', sig='%s'\n", __func__, gd_fdt_blob(),
 	      fit_get_name(fit, noffset, NULL),
 	      fit_get_name(gd_fdt_blob(), required_keynode, NULL));
@@ -377,6 +418,11 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 		return -1;
 	}
 
+	if (prop && prop_len > 0 && prop[prop_len - 1] != '\0') {
+		*err_msgp = "hashed-nodes property must be null-terminated";
+		return -1;
+	}
+
 	/* Add a sanity check here since we are using the stack */
 	if (count > IMAGE_MAX_HASHED_NODES) {
 		*err_msgp = "Number of hashed nodes exceeds maximum";
@@ -387,14 +433,25 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 	char *node_inc[count];
 
 	debug("Hash nodes (%d):\n", count);
+	found_config = false;
 	for (name = prop, i = 0; name < end; name += strlen(name) + 1, i++) {
 		debug("   '%s'\n", name);
 		node_inc[i] = (char *)name;
+		if (!strncmp(FIT_CONFS_PATH, name, strlen(FIT_CONFS_PATH)) &&
+		    name[sizeof(FIT_CONFS_PATH) - 1] == '/' &&
+		    !strcmp(name + sizeof(FIT_CONFS_PATH), config_name)) {
+			debug("      (found config node %s)", config_name);
+			found_config = true;
+		}
+	}
+	if (!found_config) {
+		*err_msgp = "Selected config not in hashed nodes";
+		return -1;
 	}
 
 	/*
 	 * Each node can generate one region for each sub-node. Allow for
-	 * 7 sub-nodes (hash@1, signature@1, etc.) and some extra.
+	 * 7 sub-nodes (hash-1, signature-1, etc.) and some extra.
 	 */
 	max_regions = 20 + count * 7;
 	struct fdt_region fdt_regions[max_regions];
@@ -420,8 +477,11 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 	/* Add the strings */
 	strings = fdt_getprop(fit, noffset, "hashed-strings", NULL);
 	if (strings) {
-		fdt_regions[count].offset = fdt_off_dt_strings(fit) +
-				fdt32_to_cpu(strings[0]);
+		/*
+		 * The strings region offset must be a static 0x0.
+		 * This is set in tool/image-host.c
+		 */
+		fdt_regions[count].offset = fdt_off_dt_strings(fit);
 		fdt_regions[count].size = fdt32_to_cpu(strings[1]);
 		count++;
 	}
@@ -435,13 +495,6 @@ int fit_config_check_sig(const void *fit, int noffset, int required_keynode,
 		*err_msgp = "Verification failed";
 		return -1;
 	}
-	/* Get the secure flag here and write the secure data and the secure flag */
-#if !defined(USE_HOSTCC)
-#if defined(CONFIG_SPL_BUILD) && defined(CONFIG_SPL_FIT_HW_CRYPTO) && \
-    defined(CONFIG_SPL_ROCKCHIP_SECURE_OTP)
-	rsa_burn_key_hash(&info);
-#endif
-#endif
 
 	return 0;
 }
@@ -461,7 +514,7 @@ static int fit_config_verify_sig(const void *fit, int conf_noffset,
 		if (!strncmp(name, FIT_SIG_NODENAME,
 			     strlen(FIT_SIG_NODENAME))) {
 			ret = fit_config_check_sig(fit, noffset, sig_offset,
-						   &err_msg);
+						   conf_noffset, &err_msg);
 			if (ret) {
 				puts("- ");
 			} else {
@@ -484,7 +537,7 @@ error:
 	printf(" error!\n%s for '%s' hash node in '%s' config node\n",
 	       err_msg, fit_get_name(fit, noffset, NULL),
 	       fit_get_name(fit, conf_noffset, NULL));
-	return -1;
+	return -EPERM;
 }
 
 int fit_config_verify_required_sigs(const void *fit, int conf_noffset,
@@ -496,15 +549,17 @@ int fit_config_verify_required_sigs(const void *fit, int conf_noffset,
 	/* Work out what we need to verify */
 	sig_node = fdt_subnode_offset(sig_blob, 0, FIT_SIG_NODENAME);
 	if (sig_node < 0) {
-		printf("No RSA key found\n");
-		return -EINVAL;
+		debug("%s: No signature node found: %s\n", __func__,
+		      fdt_strerror(sig_node));
+		return 0;
 	}
 
 	fdt_for_each_subnode(noffset, sig_blob, sig_node) {
 		const char *required;
 		int ret;
 
-		required = fdt_getprop(sig_blob, noffset, "required", NULL);
+		required = fdt_getprop(sig_blob, noffset, FIT_KEY_REQUIRED,
+				       NULL);
 		if (!required || strcmp(required, "conf"))
 			continue;
 		ret = fit_config_verify_sig(fit, conf_noffset, sig_blob,
@@ -524,22 +579,3 @@ int fit_config_verify(const void *fit, int conf_noffset)
 	return fit_config_verify_required_sigs(fit, conf_noffset,
 					       gd_fdt_blob());
 }
-
-#ifndef USE_HOSTCC
-#if CONFIG_IS_ENABLED(FIT_ROLLBACK_PROTECT)
-__weak int fit_read_otp_rollback_index(uint32_t fit_index, uint32_t *otp_index)
-{
-	*otp_index = 0;
-
-	return 0;
-}
-__weak int fit_rollback_index_verify(const void *fit, uint32_t rollback_fd,
-				     uint32_t *this_index, uint32_t *min_index)
-{
-	*this_index = 0;
-	*min_index = 0;
-
-	return 0;
-}
-#endif
-#endif

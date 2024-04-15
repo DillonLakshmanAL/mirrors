@@ -1,9 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0+
 #
 # (C) Copyright 2006
 # Wolfgang Denk, DENX Software Engineering, wd@denx.de.
-#
-# SPDX-License-Identifier:	GPL-2.0+
-#
 
 obj-$(CONFIG_DM_SPI_FLASH) += sf-uclass.o
 spi-nor-y := sf_probe.o spi-nor-ids.o
@@ -21,5 +19,5 @@ endif
 
 obj-$(CONFIG_SPI_FLASH) += spi-nor.o
 obj-$(CONFIG_SPI_FLASH_DATAFLASH) += sf_dataflash.o
-obj-$(CONFIG_SPI_FLASH_MTD) += sf_mtd.o
+obj-$(CONFIG_$(SPL_)SPI_FLASH_MTD) += sf_mtd.o
 obj-$(CONFIG_SPI_FLASH_SANDBOX) += sandbox.o

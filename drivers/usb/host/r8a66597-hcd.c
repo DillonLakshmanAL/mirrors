@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * R8A66597 HCD (Host Controller Driver) for u-boot
  *
  * Copyright (C) 2008  Yoshihiro Shimoda <shimoda.yoshihiro@renesas.com>
- *
- * SPDX-License-Identifier:	GPL-2.0
  */
 
 #include <common.h>
@@ -11,6 +10,7 @@
 #include <dm.h>
 #include <usb.h>
 #include <asm/io.h>
+#include <dm/device_compat.h>
 #include <linux/iopoll.h>
 #include <power/regulator.h>
 
@@ -99,10 +99,10 @@ static int r8a66597_clock_enable(struct r8a66597 *r8a66597)
 	 * and USB1, so we must always set the USB0 register
 	 */
 #if (CONFIG_R8A66597_XTAL == 1)
-	setbits(le16, R8A66597_BASE0, XTAL);
+	r8a66597_bset(r8a66597, XTAL, SYSCFG0);
 #endif
 	mdelay(1);
-	setbits(le16, R8A66597_BASE0, UPLLE);
+	r8a66597_bset(r8a66597, UPLLE, SYSCFG0);
 	mdelay(1);
 	r8a66597_bset(r8a66597, SUSPM, SUSPMODE0);
 
@@ -113,7 +113,7 @@ static void r8a66597_clock_disable(struct r8a66597 *r8a66597)
 {
 	r8a66597_bclr(r8a66597, SUSPM, SUSPMODE0);
 
-	clrbits(le16, R8A66597_BASE0, UPLLE);
+	r8a66597_bclr(r8a66597, UPLLE, SYSCFG0);
 	mdelay(1);
 	r8a66597_bclr(r8a66597, USBE, SYSCFG0);
 	mdelay(1);

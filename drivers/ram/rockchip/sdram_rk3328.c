@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+ OR BSD-3-Clause
 /*
  * (C) Copyright 2017 Rockchip Electronics Co., Ltd.
- *
- * SPDX-License-Identifier:     GPL-2.0
  */
 #include <common.h>
 #include <clk.h>
@@ -12,15 +11,13 @@
 #include <regmap.h>
 #include <syscon.h>
 #include <asm/io.h>
-#include <asm/arch/clock.h>
-#include <asm/arch/cru_rk3328.h>
-#include <asm/arch/grf_rk3328.h>
-#include <asm/arch/rockchip_dmc.h>
-#include <asm/arch/sdram.h>
-#include <asm/arch/sdram_rk3328.h>
-#include <asm/arch/uart.h>
+#include <asm/arch-rockchip/clock.h>
+#include <asm/arch-rockchip/cru_rk3328.h>
+#include <asm/arch-rockchip/grf_rk3328.h>
+#include <asm/arch-rockchip/sdram.h>
+#include <asm/arch-rockchip/sdram_rk3328.h>
+#include <asm/arch-rockchip/uart.h>
 
-DECLARE_GLOBAL_DATA_PTR;
 struct dram_info {
 #ifdef CONFIG_TPL_BUILD
 	struct ddr_pctl_regs *pctl;
@@ -134,8 +131,7 @@ static void rkclk_configure_ddr(struct dram_info *dram,
  *       other, the ddrconfig value
  * only support cs0_row >= cs1_row
  */
-static unsigned int calculate_ddrconfig(
-		struct rk3328_sdram_params *sdram_params)
+static u32 calculate_ddrconfig(struct rk3328_sdram_params *sdram_params)
 {
 	struct sdram_cap_info *cap_info = &sdram_params->ch.cap_info;
 	u32 cs, bw, die_bw, col, row, bank;
@@ -285,7 +281,7 @@ static void set_ddrconfig(struct dram_info *dram, u32 ddrconfig)
 }
 
 static void sdram_msch_config(struct msch_regs *msch,
-		       struct sdram_msch_timings *noc_timings)
+			      struct sdram_msch_timings *noc_timings)
 {
 	writel(noc_timings->ddrtiming.d32, &msch->ddrtiming);
 
@@ -381,16 +377,12 @@ static int sdram_init(struct dram_info *dram,
 		printf("data training error\n");
 		return -1;
 	}
-	if (data_training(dram, 1, sdram_params->base.dramtype) != 0) {
-		printf("data training error\n");
-		return -1;
-	}
 
 	if (sdram_params->base.dramtype == DDR4)
 		pctl_write_vrefdq(dram->pctl, 0x3, 5670,
 				  sdram_params->base.dramtype);
 
-	if (pre_init == 0) {
+	if (pre_init != 0) {
 		rx_deskew_switch_adjust(dram);
 		tx_deskew_switch_adjust(dram);
 	}
@@ -486,7 +478,7 @@ static int sdram_init_detect(struct dram_info *dram,
 	memcpy(&sdram_ch, &sdram_params->ch,
 	       sizeof(struct rk3328_sdram_channel));
 
-	sdram_init(dram, sdram_params, 1);
+	sdram_init(dram, sdram_params, 0);
 	dram_detect_cap(dram, sdram_params, 0);
 
 	/* modify bw, cs related timing */
@@ -499,7 +491,7 @@ static int sdram_init_detect(struct dram_info *dram,
 		sdram_ch.noc_timings.ddrtiming.b.bwratio = 1;
 
 	/* reinit sdram by real dram cap */
-	sdram_init(dram, sdram_params, 0);
+	sdram_init(dram, sdram_params, 1);
 
 	/* redetect cs1 row */
 	sdram_detect_cs1_row(cap_info, sdram_params->base.dramtype);
@@ -512,8 +504,7 @@ static int sdram_init_detect(struct dram_info *dram,
 		writel(sys_reg3, &dram->grf->os_reg[3]);
 	}
 
-	sdram_print_ddr_info(&sdram_params->ch.cap_info,
-			     &sdram_params->base, 0);
+	sdram_print_ddr_info(&sdram_params->ch.cap_info, &sdram_params->base);
 
 	return 0;
 }
@@ -579,35 +570,19 @@ static int rk3328_dmc_ofdata_to_platdata(struct udevice *dev)
 
 static int rk3328_dmc_probe(struct udevice *dev)
 {
-	int ret = 0;
 #ifdef CONFIG_TPL_BUILD
 	if (rk3328_dmc_init(dev))
 		return 0;
 #else
-	struct dram_info *priv;
+	struct dram_info *priv = dev_get_priv(dev);
 
-	if (!(gd->flags & GD_FLG_RELOC)) {
-		priv = dev_get_priv(dev);
-		priv->grf = syscon_get_first_range(ROCKCHIP_SYSCON_GRF);
-		debug("%s: grf=%p\n", __func__, priv->grf);
-		priv->info.base = CONFIG_SYS_SDRAM_BASE;
-		priv->info.size =
-			rockchip_sdram_size((phys_addr_t)&priv->grf->os_reg[2]);
-#ifdef CONFIG_SPL_BUILD
-	struct ddr_param ddr_parem;
-
-	ddr_parem.count = 1;
-	ddr_parem.para[0] = priv->info.base;
-	ddr_parem.para[1] = priv->info.size;
-	rockchip_setup_ddr_param(&ddr_parem);
+	priv->grf = syscon_get_first_range(ROCKCHIP_SYSCON_GRF);
+	debug("%s: grf=%p\n", __func__, priv->grf);
+	priv->info.base = CONFIG_SYS_SDRAM_BASE;
+	priv->info.size = rockchip_sdram_size(
+				(phys_addr_t)&priv->grf->os_reg[2]);
 #endif
-	} else {
-#if !defined(CONFIG_SPL_BUILD) && defined(CONFIG_ROCKCHIP_DMC)
-		ret = rockchip_dmcfreq_probe(dev);
-#endif
-	}
-#endif
-	return ret;
+	return 0;
 }
 
 static int rk3328_dmc_get_info(struct udevice *dev, struct ram_info *info)

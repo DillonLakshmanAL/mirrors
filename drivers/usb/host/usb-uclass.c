@@ -1,10 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2015 Google, Inc
  * Written by Simon Glass <sjg@chromium.org>
  *
  * usb_match_device() modified from Linux kernel v4.0.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -16,14 +15,23 @@
 #include <dm/lists.h>
 #include <dm/uclass-internal.h>
 
-DECLARE_GLOBAL_DATA_PTR;
-
 extern bool usb_started; /* flag for the started/stopped USB status */
 static bool asynch_allowed;
 
 struct usb_uclass_priv {
 	int companion_device_count;
 };
+
+int usb_lock_async(struct usb_device *udev, int lock)
+{
+	struct udevice *bus = udev->controller_dev;
+	struct dm_usb_ops *ops = usb_get_ops(bus);
+
+	if (!ops->lock_async)
+		return -ENOSYS;
+
+	return ops->lock_async(bus, lock);
+}
 
 int usb_disable_asynch(int disable)
 {

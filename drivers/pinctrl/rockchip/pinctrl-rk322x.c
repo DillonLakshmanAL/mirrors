@@ -148,7 +148,7 @@ static int rk3228_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 	struct regmap *regmap;
 	int reg, ret, mask, mux_type;
 	u8 bit;
-	u32 data;
+	u32 data, route_reg, route_val;
 
 	regmap = (bank->iomux[iomux_num].type & IOMUX_SOURCE_PMU)
 				? priv->regmap_pmu : priv->regmap_base;
@@ -157,6 +157,15 @@ static int rk3228_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 	mux_type = bank->iomux[iomux_num].type;
 	reg = bank->iomux[iomux_num].offset;
 	reg += rockchip_get_mux_data(mux_type, pin, &bit, &mask);
+
+	if (bank->route_mask & BIT(pin)) {
+		if (rockchip_get_mux_route(bank, pin, mux, &route_reg,
+					   &route_val)) {
+			ret = regmap_write(regmap, route_reg, route_val);
+			if (ret)
+				return ret;
+		}
+	}
 
 	data = (mask << (bit + 16));
 	data |= (mux & mask) << bit;
@@ -259,7 +268,6 @@ static struct rockchip_pin_bank rk3228_pin_banks[] = {
 static struct rockchip_pin_ctrl rk3228_pin_ctrl = {
 	.pin_banks		= rk3228_pin_banks,
 	.nr_banks		= ARRAY_SIZE(rk3228_pin_banks),
-	.nr_pins		= 128,
 	.grf_mux_offset		= 0x0,
 	.iomux_routes		= rk3228_mux_route_data,
 	.niomux_routes		= ARRAY_SIZE(rk3228_mux_route_data),

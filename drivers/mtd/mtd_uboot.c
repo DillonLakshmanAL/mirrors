@@ -1,14 +1,14 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2014
  * Heiko Schocher, DENX Software Engineering, hs@denx.de.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 #include <common.h>
+#include <env.h>
+#include <malloc.h>
 #include <dm/device.h>
-#include <dm/device-internal.h>
 #include <dm/uclass-internal.h>
-#include <jffs2/jffs2.h> /* LEGACY */
+#include <linux/err.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <mtd.h>
@@ -100,7 +100,7 @@ int mtd_search_alternate_name(const char *mtdname, char *altname,
 	return -EINVAL;
 }
 
-#if IS_ENABLED(CONFIG_MTD)
+#if IS_ENABLED(CONFIG_DM_MTD)
 static void mtd_probe_uclass_mtd_devs(void)
 {
 	struct udevice *dev;
@@ -114,22 +114,6 @@ static void mtd_probe_uclass_mtd_devs(void)
 }
 #else
 static void mtd_probe_uclass_mtd_devs(void) { }
-#endif
-
-#if IS_ENABLED(CONFIG_DM_SPI_FLASH) && IS_ENABLED(CONFIG_SPI_FLASH_MTD)
-static void __maybe_unused mtd_probe_uclass_spi_nor_devs(void)
-{
-	struct udevice *dev;
-	int idx = 0;
-
-	/* Probe devices with DM compliant drivers */
-	while (!uclass_find_device(UCLASS_SPI_FLASH, idx, &dev) && dev) {
-		device_probe(dev);
-		idx++;
-	}
-}
-#else
-static void __maybe_unused mtd_probe_uclass_spi_nor_devs(void) { }
 #endif
 
 #if defined(CONFIG_MTD_PARTITIONS)
@@ -222,7 +206,6 @@ int mtd_probe_devices(void)
 	struct mtd_info *mtd;
 
 	mtd_probe_uclass_mtd_devs();
-	mtd_probe_uclass_spi_nor_devs();
 
 	/*
 	 * Check if mtdparts/mtdids changed, if the MTD dev list was updated
@@ -370,101 +353,7 @@ int mtd_probe_devices(void)
 int mtd_probe_devices(void)
 {
 	mtd_probe_uclass_mtd_devs();
-	mtd_probe_uclass_spi_nor_devs();
 
 	return 0;
 }
 #endif /* defined(CONFIG_MTD_PARTITIONS) */
-
-/* Legacy */
-
-static int get_part(const char *partname, int *idx, loff_t *off, loff_t *size,
-		loff_t *maxsize, int devtype)
-{
-#ifdef CONFIG_CMD_MTDPARTS
-	struct mtd_device *dev;
-	struct part_info *part;
-	u8 pnum;
-	int ret;
-
-	ret = mtdparts_init();
-	if (ret)
-		return ret;
-
-	ret = find_dev_and_part(partname, &dev, &pnum, &part);
-	if (ret)
-		return ret;
-
-	if (dev->id->type != devtype) {
-		printf("not same typ %d != %d\n", dev->id->type, devtype);
-		return -1;
-	}
-
-	*off = part->offset;
-	*size = part->size;
-	*maxsize = part->size;
-	*idx = dev->id->num;
-
-	return 0;
-#else
-	puts("mtdparts support missing.\n");
-	return -1;
-#endif
-}
-
-int mtd_arg_off(const char *arg, int *idx, loff_t *off, loff_t *size,
-		loff_t *maxsize, int devtype, uint64_t chipsize)
-{
-	if (!str2off(arg, off))
-		return get_part(arg, idx, off, size, maxsize, devtype);
-
-	if (*off >= chipsize) {
-		puts("Offset exceeds device limit\n");
-		return -1;
-	}
-
-	*maxsize = chipsize - *off;
-	*size = *maxsize;
-	return 0;
-}
-
-int mtd_arg_off_size(int argc, char *const argv[], int *idx, loff_t *off,
-		     loff_t *size, loff_t *maxsize, int devtype,
-		     uint64_t chipsize)
-{
-	int ret;
-
-	if (argc == 0) {
-		*off = 0;
-		*size = chipsize;
-		*maxsize = *size;
-		goto print;
-	}
-
-	ret = mtd_arg_off(argv[0], idx, off, size, maxsize, devtype,
-			  chipsize);
-	if (ret)
-		return ret;
-
-	if (argc == 1)
-		goto print;
-
-	if (!str2off(argv[1], size)) {
-		printf("'%s' is not a number\n", argv[1]);
-		return -1;
-	}
-
-	if (*size > *maxsize) {
-		puts("Size exceeds partition or device limit\n");
-		return -1;
-	}
-
-print:
-	printf("device %d ", *idx);
-	if (*size == chipsize)
-		puts("whole chip\n");
-	else
-		printf("offset 0x%llx, size 0x%llx\n",
-		       (unsigned long long)*off, (unsigned long long)*size);
-	return 0;
-}

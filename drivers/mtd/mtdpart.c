@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Simple MTD partitioning layer
  *
@@ -5,11 +6,10 @@
  * Copyright © 2002 Thomas Gleixner <gleixner@linutronix.de>
  * Copyright © 2000-2010 David Woodhouse <dwmw2@infradead.org>
  *
- * SPDX-License-Identifier:	GPL-2.0+
- *
  */
 
 #ifndef __UBOOT__
+#include <dm/devres.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/kernel.h>

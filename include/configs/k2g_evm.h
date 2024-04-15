@@ -1,10 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Configuration header file for TI's k2g-evm
  *
  * (C) Copyright 2015
  *     Texas Instruments Incorporated, <www.ti.com>
- *
- * SPDX-License-Identifier:     GPL-2.0+
  */
 
 #ifndef __CONFIG_K2G_EVM_H
@@ -15,8 +14,6 @@
 
 /* Platform type */
 #define CONFIG_SOC_K2G
-
-#define CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG
 
 /* U-Boot general configuration */
 #define CONFIG_EXTRA_ENV_KS2_BOARD_SETTINGS				\
@@ -34,11 +31,13 @@
 	"findfdt="\
 		"if test $board_name = 66AK2GGP; then " \
 			 "setenv name_fdt keystone-k2g-evm.dtb; " \
+		"else if test $board_name = 66AK2GG1; then " \
+			"setenv name_fdt keystone-k2g-evm.dtb; " \
 		"else if test $board_name = 66AK2GIC; then " \
 			 "setenv name_fdt keystone-k2g-ice.dtb; " \
 		"else if test $name_fdt = undefined; then " \
 			"echo WARNING: Could not determine device tree to use;"\
-		"fi;fi;fi;\0" \
+		"fi;fi;fi;fi; setenv fdtfile ${name_fdt}\0" \
 	"name_mon=skern-k2g.bin\0"					\
 	"name_ubi=k2g-evm-ubifs.ubi\0"					\
 	"name_uboot=u-boot-spi-k2g-evm.gph\0"				\
@@ -69,13 +68,9 @@
 	"run envboot; "							\
 	"run run_mon_hs; "						\
 	"run init_${boot}; "						\
-	"run set_name_pmmc get_pmmc_${boot} run_pmmc; "			\
 	"run get_fit_${boot}; "						\
-	"bootm ${fit_loadaddr}#${name_fdt}"
+	"bootm ${addr_fit}#${name_fdt}"
 #endif
-
-/* SPL SPI Loader Configuration */
-#define CONFIG_SPL_TEXT_BASE		0x0c080000
 
 /* NAND Configuration */
 #define CONFIG_SYS_NAND_PAGE_2K
@@ -85,11 +80,6 @@
 #define CONFIG_KSNET_CPSW_NUM_PORTS	2
 #define CONFIG_KSNET_MDIO_PHY_CONFIG_ENABLE
 #define PHY_ANEG_TIMEOUT	10000 /* PHY needs longer aneg time */
-
-#define CONFIG_ENV_SIZE			(256 << 10)  /* 256 KiB */
-
-#define CONFIG_SF_DEFAULT_BUS		1
-#define CONFIG_SF_DEFAULT_CS		0
 
 #ifndef CONFIG_SPL_BUILD
 #define CONFIG_CADENCE_QSPI

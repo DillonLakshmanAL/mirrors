@@ -1,8 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2017 Vasily Khoruzhick <anarsoul@gmail.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
+
+#define DEBUG
 
 #include <common.h>
 #include <dm.h>
@@ -11,16 +12,12 @@
 #include <edid.h>
 #include <video_bridge.h>
 #include "../anx98xx-edp.h"
-#include "../drm/rockchip_bridge.h"
 
 #define DP_MAX_LINK_RATE		0x001
 #define DP_MAX_LANE_COUNT		0x002
 #define DP_MAX_LANE_COUNT_MASK		0x1f
 
-DECLARE_GLOBAL_DATA_PTR;
-
 struct anx6345_priv {
-	u8 chipid;
 	u8 edid[EDID_SIZE];
 };
 
@@ -253,20 +250,77 @@ static int anx6345_read_dpcd(struct udevice *dev, u32 reg, u8 *val)
 	return 0;
 }
 
+static u8 pinebook14_edid[] = {
+	/* Header */
+	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+	/* ID Manufacturer Name */
+	0x09, 0xe5,
+	/* ID Product Code */
+	0x37, 0x00,
+	/* 32-bit serial No. */
+	0x00, 0x00, 0x00, 0x00,
+	/* Week of manufacture */
+	0x01,
+	/* Year of manufacture */
+	0x16,
+	/* EDID Structure Ver. */
+	0x01,
+	/* EDID revision # */
+	0x04,
+	/* Video input definition */
+	0x80,
+	/* Max H image size */
+	0x1f,
+	/* Max V image size */
+	0x11,
+	/* Display Gamma */
+	0x78,
+	/* Feature support */
+	0x0a,
+	/* Color bits */
+	0xb0, 0x90, 0x97, 0x58, 0x54, 0x92, 0x26, 0x1d, 0x50, 0x54,
+	/* Established timings */
+	0x00, 0x00, 0x00,
+	/* Standard timings */
+	0x01, 0x01,
+	0x01, 0x01,
+	0x01, 0x01,
+	0x01, 0x01,
+	0x01, 0x01,
+	0x01, 0x01,
+	0x01, 0x01,
+	0x01, 0x01,
+	/* Detailed timing/monitor descriptor #1 */
+	0x3e, 0x1c, 0x56, 0xa0, 0x50, 0x00, 0x16, 0x30,
+	0x30, 0x20, 0x36, 0x00, 0x35, 0xad, 0x10, 0x00,
+	0x00, 0x1a,
+	/* Detailed timing/monitor descriptor #2 */
+	0x3e, 0x1c, 0x56, 0xa0, 0x50, 0x00, 0x16, 0x30,
+	0x30, 0x20, 0x36, 0x00, 0x35, 0xad, 0x10, 0x00,
+	0x00, 0x1a,
+	/* Detailed timing/monitor descriptor #3 */
+	0x00, 0x00, 0x00, 0xfe, 0x00, 0x42, 0x4f, 0x45,
+	0x20, 0x48, 0x46, 0x0a, 0x20, 0x20, 0x20, 0x20,
+	0x20, 0x20,
+	/* Detailed timing/monitor descriptor #4 */
+	0x00, 0x00, 0x00, 0xfe, 0x00, 0x48, 0x42, 0x31,
+	0x34, 0x30, 0x57, 0x58, 0x31, 0x2d, 0x35, 0x30,
+	0x31, 0x0a,
+	/* Extension flag */
+	0x00,
+	/* Checksum */
+	0x81
+};
+
 static int anx6345_read_edid(struct udevice *dev, u8 *buf, int size)
 {
-	struct anx6345_priv *priv = dev_get_priv(dev);
-	int ret;
-
-	ret = anx6345_read_aux_i2c(dev, 0x50, 0x0, EDID_SIZE, priv->edid);
-	if (ret < 0) {
-		dev_err(dev, "failed to get edid\n");
-		return ret;
-	}
-
 	if (size > EDID_SIZE)
 		size = EDID_SIZE;
-	memcpy(buf, priv->edid, size);
+
+	if (anx6345_read_aux_i2c(dev, 0x50, 0x0, size, buf) != 0) {
+		debug("%s: EDID read failed, using static EDID\n", __func__);
+		memcpy(buf, pinebook14_edid, size);
+	}
 
 	return size;
 }
@@ -277,11 +331,12 @@ static int anx6345_attach(struct udevice *dev)
 	return 0;
 }
 
-static int anx6345_init(struct udevice *dev)
+static int anx6345_enable(struct udevice *dev)
 {
-	struct anx6345_priv *priv = dev_get_priv(dev);
-	u8 c;
+	u8 chipid, colordepth, lanes, data_rate, c;
 	int ret, i;
+	struct display_timing timing;
+	struct anx6345_priv *priv = dev_get_priv(dev);
 
 	/* Deassert reset and enable power */
 	ret = video_bridge_set_active(dev, true);
@@ -296,16 +351,16 @@ static int anx6345_init(struct udevice *dev)
 	/* Write 0 to the powerdown reg (powerup everything) */
 	anx6345_write_r1(dev, ANX9804_POWERD_CTRL_REG, 0);
 
-	ret = anx6345_read_r1(dev, ANX9804_DEV_IDH_REG, &priv->chipid);
+	ret = anx6345_read_r1(dev, ANX9804_DEV_IDH_REG, &chipid);
 	if (ret)
 		debug("%s: read id failed: %d\n", __func__, ret);
 
-	switch (priv->chipid) {
+	switch (chipid) {
 	case 0x63:
 		debug("ANX63xx detected.\n");
 		break;
 	default:
-		debug("Error anx6345 chipid mismatch: %.2x\n", priv->chipid);
+		debug("Error anx6345 chipid mismatch: %.2x\n", (int)chipid);
 		return -ENODEV;
 	}
 
@@ -347,36 +402,19 @@ static int anx6345_init(struct udevice *dev)
 	anx6345_write_r0(dev, ANX9804_HDCP_CONTROL_0_REG, 0x00);
 	anx6345_write_r0(dev, 0xa7, 0x00);
 
-	return 0;
-}
+	/* XXXJDM hard-coded for HB140WX1-501 14" TFT-LCD */
+	colordepth = 0x00; /* 6 bit */
 
-static int anx6345_enable(struct udevice *dev)
-{
-	u8 colordepth, lanes, data_rate, c;
-	int i, bpp;
-	struct display_timing timing;
-	struct anx6345_priv *priv = dev_get_priv(dev);
-
-	if (edid_get_timing(priv->edid, EDID_SIZE, &timing, &bpp) != 0) {
-		debug("Failed to parse EDID\n");
-		return -EIO;
-	}
-	debug("%s: panel found: %dx%d, bpp %d\n", __func__,
-	      timing.hactive.typ, timing.vactive.typ, bpp);
-	if (bpp == 6)
-		colordepth = 0x00; /* 6 bit */
-	else
-		colordepth = 0x10; /* 8 bit */
 	anx6345_write_r1(dev, ANX9804_VID_CTRL2_REG, colordepth);
 
 	if (anx6345_read_dpcd(dev, DP_MAX_LINK_RATE, &data_rate)) {
 		debug("%s: Failed to DP_MAX_LINK_RATE\n", __func__);
-		return -EIO;
+		data_rate = 10;
 	}
 	debug("%s: data_rate: %d\n", __func__, (int)data_rate);
 	if (anx6345_read_dpcd(dev, DP_MAX_LANE_COUNT, &lanes)) {
 		debug("%s: Failed to read DP_MAX_LANE_COUNT\n", __func__);
-		return -EIO;
+		lanes = 1;
 	}
 	lanes &= DP_MAX_LANE_COUNT_MASK;
 	debug("%s: lanes: %d\n", __func__, (int)lanes);
@@ -391,7 +429,7 @@ static int anx6345_enable(struct udevice *dev)
 	mdelay(5);
 	for (i = 0; i < 100; i++) {
 		anx6345_read_r0(dev, ANX9804_LINK_TRAINING_CTRL_REG, &c);
-		if ((priv->chipid == 0x63) && (c & 0x80) == 0)
+		if ((chipid == 0x63) && (c & 0x80) == 0)
 			break;
 
 		mdelay(5);
@@ -402,8 +440,8 @@ static int anx6345_enable(struct udevice *dev)
 	}
 
 	/* Enable */
-	anx6345_write_r1(dev, ANX9804_VID_CTRL1_REG, ANX9804_VID_CTRL1_VID_EN |
-			 ANX9804_VID_CTRL1_DDR_CTRL | ANX9804_VID_CTRL1_EDGE);
+	anx6345_write_r1(dev, ANX9804_VID_CTRL1_REG,
+			 ANX9804_VID_CTRL1_VID_EN | ANX9804_VID_CTRL1_EDGE);
 	/* Force stream valid */
 	anx6345_write_r0(dev, ANX9804_SYS_CTRL3_REG,
 			 ANX9804_SYS_CTRL3_F_HPD |
@@ -416,40 +454,20 @@ static int anx6345_enable(struct udevice *dev)
 
 static int anx6345_probe(struct udevice *dev)
 {
-	struct rockchip_bridge *bridge =
-		(struct rockchip_bridge *)dev_get_driver_data(dev);
-
 	if (device_get_uclass_id(dev->parent) != UCLASS_I2C)
 		return -EPROTONOSUPPORT;
 
-	bridge->dev = dev;
-
-	return anx6345_init(dev);
+	return anx6345_enable(dev);
 }
 
-static const struct video_bridge_ops anx6345_ops = {
+struct video_bridge_ops anx6345_ops = {
 	.attach = anx6345_attach,
 	.set_backlight = anx6345_set_backlight,
 	.read_edid = anx6345_read_edid,
 };
 
-static void anx6345_bridge_enable(struct rockchip_bridge *bridge)
-{
-	anx6345_enable(bridge->dev);
-}
-
-static const struct rockchip_bridge_funcs anx6345_bridge_funcs = {
-	.enable = anx6345_bridge_enable,
-};
-
-static struct rockchip_bridge anx6345_driver_data = {
-	.funcs = &anx6345_bridge_funcs,
-};
-
 static const struct udevice_id anx6345_ids[] = {
-	{
-		.compatible = "analogix,anx6345",
-		.data = (ulong)&anx6345_driver_data, },
+	{ .compatible = "analogix,anx6345", },
 	{ }
 };
 

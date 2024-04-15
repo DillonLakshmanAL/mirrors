@@ -57,10 +57,13 @@
  */
 
 #include <dm.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
+#include <linux/err.h>
 #include <linux/usb/gadget.h>
 #include <linux/compat.h>
 #include <linux/iopoll.h>
-#include <asm/dma-mapping.h>
+#include <linux/dma-mapping.h>
 #include <linux/bitmap.h>
 #include <linux/bug.h>
 
@@ -2576,7 +2579,7 @@ static int cdns3_gadget_start(struct cdns3 *cdns)
 	if (!priv_dev->onchip_buffers)
 		priv_dev->onchip_buffers = 256;
 
-	max_speed = usb_get_maximum_speed(dev_ofnode(cdns->dev));
+	max_speed = usb_get_maximum_speed(dev_of_offset(cdns->dev));
 
 	/* Check the maximum_speed parameter */
 	switch (max_speed) {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2005-2007 by Texas Instruments
  * Some code has been taken from tusb6010.c
@@ -6,13 +7,14 @@
  * Tony Lindgren <tony@atomide.com>
  *
  * This file is part of the Inventra Controller Driver for Linux.
- *
- * SPDX-License-Identifier:	GPL-2.0
  */
 #include <common.h>
 #include <dm.h>
+#include <serial.h>
 #include <dm/device-internal.h>
+#include <dm/device_compat.h>
 #include <dm/lists.h>
+#include <linux/err.h>
 #include <linux/usb/otg.h>
 #include <asm/omap_common.h>
 #include <asm/omap_musb.h>
@@ -216,11 +218,13 @@ static int omap2430_musb_probe(struct udevice *dev)
 {
 #ifdef CONFIG_USB_MUSB_HOST
 	struct musb_host_data *host = dev_get_priv(dev);
+#else
+	struct musb *musbp;
 #endif
 	struct omap2430_musb_platdata *platdata = dev_get_platdata(dev);
 	struct usb_bus_priv *priv = dev_get_uclass_priv(dev);
 	struct omap_musb_board_data *otg_board_data;
-	int ret;
+	int ret = 0;
 	void *base = dev_read_addr_ptr(dev);
 
 	priv->desc_before_addr = true;
@@ -237,9 +241,11 @@ static int omap2430_musb_probe(struct udevice *dev)
 
 	ret = musb_lowlevel_init(host);
 #else
-	ret = musb_register(&platdata->plat,
+	musbp = musb_register(&platdata->plat,
 			  (struct device *)otg_board_data,
 			  platdata->base);
+	if (IS_ERR_OR_NULL(musbp))
+		return -EINVAL;
 #endif
 	return ret;
 }

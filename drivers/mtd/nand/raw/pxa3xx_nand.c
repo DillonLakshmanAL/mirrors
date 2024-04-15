@@ -1,16 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * drivers/mtd/nand/raw/pxa3xx_nand.c
  *
  * Copyright © 2005 Intel Corporation
  * Copyright © 2006 Marvell International Ltd.
- *
- * SPDX-License-Identifier:	GPL-2.0
  */
 
 #include <common.h>
 #include <malloc.h>
 #include <fdtdec.h>
 #include <nand.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
+#include <linux/err.h>
 #include <linux/errno.h>
 #include <asm/io.h>
 #include <asm/arch/cpu.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Core registration and callback routines for MTD
  * drivers and users.
@@ -5,11 +6,10 @@
  * Copyright © 1999-2010 David Woodhouse <dwmw2@infradead.org>
  * Copyright © 2006      Red Hat UK Limited 
  *
- * SPDX-License-Identifier:	GPL-2.0+
- *
  */
 
 #ifndef __UBOOT__
+#include <dm/devres.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/ptrace.h>
@@ -77,8 +77,6 @@ static struct class mtd_class = {
 	.resume = mtd_cls_resume,
 };
 #else
-struct mtd_info *mtd_table[MAX_MTD_DEVICES];
-
 #define MAX_IDR_ID	64
 
 struct idr_layer {

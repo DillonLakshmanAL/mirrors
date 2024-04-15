@@ -9,8 +9,7 @@
 #include <common.h>
 #include <dm.h>
 #include <ufs.h>
-#include <asm/io.h>
-#include <linux/bitops.h>
+#include <dm/device_compat.h>
 #include <linux/err.h>
 
 #include "ufs.h"

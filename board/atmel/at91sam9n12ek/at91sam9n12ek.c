@@ -1,11 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2013 Atmel Corporation
  * Josh Wu <josh.wu@atmel.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
+#include <init.h>
+#include <vsprintf.h>
 #include <asm/io.h>
 #include <asm/arch/at91sam9x5_matrix.h>
 #include <asm/arch/at91sam9_smc.h>
@@ -224,11 +225,11 @@ int dram_init(void)
 
 void at91_spl_board_init(void)
 {
-#ifdef CONFIG_SYS_USE_MMC
+#ifdef CONFIG_SD_BOOT
 	at91_mci_hw_init();
-#elif CONFIG_SYS_USE_NANDFLASH
+#elif CONFIG_NAND_BOOT
 	at91sam9n12ek_nand_hw_init();
-#elif CONFIG_SYS_USE_SPIFLASH
+#elif CONFIG_SPI_BOOT
 	at91_spi0_hw_init(1 << 4);
 #endif
 }

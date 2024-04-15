@@ -10,6 +10,8 @@
  */
 
 #include <common.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/log2.h>
@@ -181,7 +183,7 @@ static int read_fsr(struct spi_nor *nor)
  * location. Return the configuration register value.
  * Returns negative if error occurred.
  */
-#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND) || defined(CONFIG_SPI_FLASH_NORMEM)
+#if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
 static int read_cr(struct spi_nor *nor)
 {
 	int ret;
@@ -206,18 +208,6 @@ static int write_sr(struct spi_nor *nor, u8 val)
 	nor->cmd_buf[0] = val;
 	return nor->write_reg(nor, SPINOR_OP_WRSR, nor->cmd_buf, 1);
 }
-
-#ifdef CONFIG_SPI_FLASH_NORMEM
-/*
- * Write confiture register 1 byte
- * Returns negative if error occurred.
- */
-static int write_cr(struct spi_nor *nor, u8 val)
-{
-	nor->cmd_buf[0] = val;
-	return nor->write_reg(nor, SPINOR_OP_WRCR, nor->cmd_buf, 1);
-}
-#endif
 
 /*
  * Set write enable latch with Write Enable command.
@@ -561,6 +551,9 @@ static int spi_nor_erase(struct mtd_info *mtd, struct erase_info *instr)
 
 	dev_dbg(nor->dev, "at 0x%llx, len %lld\n", (long long)instr->addr,
 		(long long)instr->len);
+
+	if (!instr->len)
+		return 0;
 
 	div_u64_rem(instr->len, mtd->erasesize, &rem);
 	if (rem)
@@ -1242,6 +1235,9 @@ static int spi_nor_write(struct mtd_info *mtd, loff_t to, size_t len,
 
 	dev_dbg(nor->dev, "to 0x%08x, len %zd\n", (u32)to, len);
 
+	if (!len)
+		return 0;
+
 	for (i = 0; i < len; ) {
 		ssize_t written;
 		loff_t addr = to + i;
@@ -1445,45 +1441,6 @@ static int spansion_no_read_cr_quad_enable(struct spi_nor *nor)
 #endif /* CONFIG_SPI_FLASH_SFDP_SUPPORT */
 #endif /* CONFIG_SPI_FLASH_SPANSION */
 
-#ifdef CONFIG_SPI_FLASH_NORMEM
-/**
- * normem_quad_enable() - set QE bit in Status Register.
- * @nor:	pointer to a 'struct spi_nor'
- *
- * Set the Quad Enable (QE) bit in the Status Register.
- *
- * bit 6 of the Status Register is the QE bit for Macronix like QSPI memories.
- *
- * Return: 0 on success, -errno otherwise.
- */
-static int normem_quad_enable(struct spi_nor *nor)
-{
-	int ret, val;
-
-	val = read_cr(nor);
-	if (val < 0)
-		return val;
-	if (val & SR_QUAD_EN_NORMEM)
-		return 0;
-
-	write_enable(nor);
-
-	write_cr(nor, val | SR_QUAD_EN_NORMEM);
-
-	ret = spi_nor_wait_till_ready(nor);
-	if (ret)
-		return ret;
-
-	ret = read_cr(nor);
-	if (!(ret > 0 && (ret & SR_QUAD_EN_NORMEM))) {
-		dev_err(nor->dev, "NORMEM Quad bit not set\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-#endif
-
 struct spi_nor_read_command {
 	u8			num_mode_clocks;
 	u8			num_wait_states;
@@ -1643,6 +1600,7 @@ struct sfdp_parameter_header {
 
 #define SFDP_BFPT_ID		0xff00	/* Basic Flash Parameter Table */
 #define SFDP_SECTOR_MAP_ID	0xff81	/* Sector Map Table */
+#define SFDP_SST_ID		0x01bf	/* Manufacturer specific Table */
 
 #define SFDP_SIGNATURE		0x50444653U
 #define SFDP_JESD216_MAJOR	1
@@ -2023,6 +1981,34 @@ static int spi_nor_parse_bfpt(struct spi_nor *nor,
 }
 
 /**
+ * spi_nor_parse_microchip_sfdp() - parse the Microchip manufacturer specific
+ * SFDP table.
+ * @nor:		pointer to a 'struct spi_nor'.
+ * @param_header:	pointer to the SFDP parameter header.
+ *
+ * Return: 0 on success, -errno otherwise.
+ */
+static int
+spi_nor_parse_microchip_sfdp(struct spi_nor *nor,
+			     const struct sfdp_parameter_header *param_header)
+{
+	size_t size;
+	u32 addr;
+	int ret;
+
+	size = param_header->length * sizeof(u32);
+	addr = SFDP_PARAM_HEADER_PTP(param_header);
+
+	nor->manufacturer_sfdp = devm_kmalloc(nor->dev, size, GFP_KERNEL);
+	if (!nor->manufacturer_sfdp)
+		return -ENOMEM;
+
+	ret = spi_nor_read_sfdp(nor, addr, size, nor->manufacturer_sfdp);
+
+	return ret;
+}
+
+/**
  * spi_nor_parse_sfdp() - parse the Serial Flash Discoverable Parameters.
  * @nor:		pointer to a 'struct spi_nor'
  * @params:		pointer to the 'struct spi_nor_flash_parameter' to be
@@ -2118,12 +2104,25 @@ static int spi_nor_parse_sfdp(struct spi_nor *nor,
 			dev_info(dev, "non-uniform erase sector maps are not supported yet.\n");
 			break;
 
+		case SFDP_SST_ID:
+			err = spi_nor_parse_microchip_sfdp(nor, param_header);
+			break;
+
 		default:
 			break;
 		}
 
-		if (err)
-			goto exit;
+		if (err) {
+			dev_warn(dev, "Failed to parse optional parameter table: %04x\n",
+				 SFDP_PARAM_HEADER_ID(param_header));
+			/*
+			 * Let's not drop all information we extracted so far
+			 * if optional table parsers fail. In case of failing,
+			 * each optional parser is responsible to roll back to
+			 * the previously known spi_nor data.
+			 */
+			err = 0;
+		}
 	}
 
 exit:
@@ -2206,11 +2205,7 @@ static int spi_nor_init_params(struct spi_nor *nor,
 		case SNOR_MFR_ST:
 		case SNOR_MFR_MICRON:
 			break;
-#ifdef CONFIG_SPI_FLASH_NORMEM
-		case SNOR_MFR_NORMEM:
-			params->quad_enable = normem_quad_enable;
-			break;
-#endif
+
 		default:
 #if defined(CONFIG_SPI_FLASH_SPANSION) || defined(CONFIG_SPI_FLASH_WINBOND)
 			/* Kept only for backward compatibility purpose. */

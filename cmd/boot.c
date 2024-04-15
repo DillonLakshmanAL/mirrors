@@ -1,8 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2000-2003
  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 /*
@@ -11,8 +10,6 @@
 #include <common.h>
 #include <command.h>
 #include <net.h>
-#include <asm/io.h>
-#include <asm/arch/boot_mode.h>
 
 #ifdef CONFIG_CMD_GO
 
@@ -21,10 +18,6 @@ __attribute__((weak))
 unsigned long do_go_exec(ulong (*entry)(int, char * const []), int argc,
 				 char * const argv[])
 {
-#ifdef CONFIG_CPU_V7
-	ulong addr = (ulong)entry | 1;
-	entry = (void *)addr;
-#endif
 	return entry (argc, argv);
 }
 
@@ -59,32 +52,13 @@ U_BOOT_CMD(
 	"addr [arg ...]\n    - start application at address 'addr'\n"
 	"      passing 'arg' as arguments"
 );
+
 #endif
 
-static int do_reboot_brom(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
-{
-	writel(BOOT_BROM_DOWNLOAD, CONFIG_ROCKCHIP_BOOT_MODE_REG);
-	do_reset(NULL, 0, 0, NULL);
-
-	return 0;
-}
-
-U_BOOT_CMD_ALWAYS(
-	rbrom, 1, 0,	do_reboot_brom,
+U_BOOT_CMD(
+	reset, 1, 0,	do_reset,
 	"Perform RESET of the CPU",
 	""
-);
-
-U_BOOT_CMD(
-	reset, 2, 0,    do_reset,
-	"Perform RESET of the CPU",
-	""
-);
-
-U_BOOT_CMD(
-        reboot, 2, 0,    do_reset,
-        "Perform RESET of the CPU, alias of 'reset'",
-        ""
 );
 
 #ifdef CONFIG_CMD_POWEROFF

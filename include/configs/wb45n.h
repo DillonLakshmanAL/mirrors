@@ -32,7 +32,6 @@
 #define CONFIG_BOOTP_BOOTFILESIZE
 
 /* SDRAM */
-#define CONFIG_NR_DRAM_BANKS        1
 #define CONFIG_SYS_SDRAM_BASE       0x20000000
 #define CONFIG_SYS_SDRAM_SIZE       0x04000000	/* 64 MB */
 
@@ -48,6 +47,7 @@
 #define CONFIG_SYS_NAND_MASK_CLE    (1 << 22)
 #define CONFIG_SYS_NAND_ENABLE_PIN  AT91_PIN_PD4
 #define CONFIG_SYS_NAND_READY_PIN   AT91_PIN_PD5
+
 #define CONFIG_RBTREE
 #define CONFIG_LZO
 
@@ -66,9 +66,6 @@
 
 #ifdef CONFIG_SYS_USE_NANDFLASH
 /* bootstrap + u-boot + env + linux in nandflash */
-#define CONFIG_ENV_OFFSET           0xa0000
-#define CONFIG_ENV_OFFSET_REDUND    0xc0000
-#define CONFIG_ENV_SIZE             0x20000	/* 1 block = 128 kB */
 
 #define CONFIG_BOOTCOMMAND  "nand read 0x22000000 0xe0000 0x280000; " \
     "run _mtd; bootm"
@@ -110,7 +107,6 @@
 #define CONFIG_SYS_MALLOC_LEN       (512 * 1024 + 0x1000)
 
 /* SPL */
-#define CONFIG_SPL_TEXT_BASE        0x300000
 #define CONFIG_SPL_MAX_SIZE         0x6000
 #define CONFIG_SPL_STACK            0x308000
 

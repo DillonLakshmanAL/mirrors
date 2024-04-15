@@ -1,9 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (C) 2011-2012
  * Gerald Kerma <dreagle@doukki.net>
  * Luka Perkov <luka@openwrt.org>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef _CONFIG_IB62x0_H
@@ -15,9 +14,6 @@
 #define CONFIG_FEROCEON_88FR131		/* CPU Core subversion */
 #define CONFIG_KW88F6281		/* SOC Name */
 #define CONFIG_SKIP_LOWLEVEL_INIT	/* disable board lowlevel_init */
-
-/* Add target to build it automatically upon "make" */
-#define CONFIG_BUILD_TARGET     "u-boot.kwb"
 
 /*
  * Compression configuration
@@ -37,11 +33,6 @@
 /*
  * Environment variables configuration
  */
-#ifdef CONFIG_CMD_NAND
-#define CONFIG_ENV_SECT_SIZE	0x20000
-#endif
-#define CONFIG_ENV_SIZE		0x20000
-#define CONFIG_ENV_OFFSET	0xe0000
 
 /*
  * Default environment variables
@@ -56,16 +47,10 @@
 	"fdt addr 0x700000; fdt resize; fdt chosen; "			\
 	"bootz 0x800000 - 0x700000"
 
-#define CONFIG_MTDPARTS \
-	"mtdparts=orion_nand:"						\
-	"0xe0000@0x0(uboot),"						\
-	"0x20000@0xe0000(uboot_env),"					\
-	"-@0x100000(root)\0"
-
 #define CONFIG_EXTRA_ENV_SETTINGS \
 	"console=console=ttyS0,115200\0"				\
 	"mtdids=nand0=orion_nand\0"					\
-	"mtdparts="CONFIG_MTDPARTS					\
+	"mtdparts="CONFIG_MTDPARTS_DEFAULT			\
 	"kernel=/boot/zImage\0"						\
 	"fdt=/boot/ib62x0.dtb\0"					\
 	"bootargs_root=ubi.mtd=2 root=ubi0:rootfs rootfstype=ubifs rw\0"

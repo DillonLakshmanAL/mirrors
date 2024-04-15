@@ -1,17 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Renesas RCar Gen3 RPC Hyperflash driver
  *
  * Copyright (C) 2016 Renesas Electronics Corporation
  * Copyright (C) 2016 Cogent Embedded, Inc.
  * Copyright (C) 2017 Marek Vasut <marek.vasut@gmail.com>
- *
- * SPDX-License-Identifier: GPL-2.0
  */
 
 #include <common.h>
+#include <malloc.h>
 #include <asm/io.h>
 #include <clk.h>
 #include <dm.h>
+#include <dm/device_compat.h>
 #include <dm/of_access.h>
 #include <errno.h>
 #include <fdt_support.h>

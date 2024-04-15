@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * (C) Copyright 2007
  * Gerald Van Baren, Custom IDEAS, vanbaren@cideas.com
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef __FDT_SUPPORT_H
@@ -10,15 +9,28 @@
 
 #ifdef CONFIG_OF_LIBFDT
 
+#include <asm/u-boot.h>
 #include <linux/libfdt.h>
-#include <abuf.h>
+
+/**
+ * arch_fixup_fdt() - Write arch-specific information to fdt
+ *
+ * Defined in arch/$(ARCH)/lib/bootm-fdt.c
+ *
+ * @blob:	FDT blob to write to
+ * @return 0 if ok, or -ve FDT_ERR_... on failure
+ */
+int arch_fixup_fdt(void *blob);
+
+void ft_cpu_setup(void *blob, bd_t *bd);
+
+void ft_pci_setup(void *blob, bd_t *bd);
 
 u32 fdt_getprop_u32_default_node(const void *fdt, int off, int cell,
 				const char *prop, const u32 dflt);
 u32 fdt_getprop_u32_default(const void *fdt, const char *path,
 				const char *prop, const u32 dflt);
-int fdt_setprop_uxx(void *fdt, int nodeoffset, const char *name,
-		    uint64_t val, int is_u64);
+
 /**
  * Add data to the root of the FDT before booting the OS.
  *
@@ -28,24 +40,6 @@ int fdt_setprop_uxx(void *fdt, int nodeoffset, const char *name,
  * @return 0 if ok, or -FDT_ERR_... on error
  */
 int fdt_root(void *fdt);
-
-/**
- * Append info to bootargs
- *
- * @param fdt           FDT address in memory
- * @param data          string info
- * @return 0 if ok, else error
- */
-int fdt_bootargs_append(void *fdt, char *data);
-
-/**
- * Append ab info to bootargs
- *
- * @param fdt		FDT address in memory
- * @param slot		slot info
- * @return 0 if ok, else error
- */
-int fdt_bootargs_append_ab(void *fdt, char *slot);
 
 /**
  * Add chosen data the FDT before booting the OS.
@@ -113,9 +107,16 @@ int fdt_fixup_memory(void *blob, u64 start, u64 size);
  *			property will be left untouched.
  * @return 0 if ok, or -1 or -FDT_ERR_... on error
  */
+#ifdef CONFIG_ARCH_FIXUP_FDT_MEMORY
 int fdt_fixup_memory_banks(void *blob, u64 start[], u64 size[], int banks);
-
-int fdt_update_reserved_memory(void *blob, char *name, u64 start, u64 size);
+int fdt_set_usable_memory(void *blob, u64 start[], u64 size[], int banks);
+#else
+static inline int fdt_fixup_memory_banks(void *blob, u64 start[], u64 size[],
+					 int banks)
+{
+	return 0;
+}
+#endif
 
 void fdt_fixup_ethernet(void *fdt);
 int fdt_find_and_setprop(void *fdt, const char *node, const char *prop,
@@ -184,29 +185,6 @@ int fdt_find_or_add_subnode(void *fdt, int parentoffset, const char *name);
  */
 int ft_board_setup(void *blob, bd_t *bd);
 
-/**
- * board_rng_seed() - Provide a seed to be passed via /chosen/rng-seed
- *
- * This function is called if CONFIG_BOARD_RNG_SEED is set, and must
- * be provided by the board. It should return, via @buf, some suitable
- * seed value to pass to the kernel.
- *
- * @param buf         A struct abuf for returning the seed and its size.
- * @return            0 if ok, negative on error.
- */
-int board_rng_seed(struct abuf *buf);
-
-/**
- * board_fdt_chosen_bootargs() - Arbitrarily amend fdt kernel command line
- *
- * This is used for late modification of kernel command line arguments just
- * before they are added into the /chosen node in flat device tree.
- *
- * @fdt: fdt blob
- * @return: pointer to kernel command line arguments in memory
- */
-char *board_fdt_chosen_bootargs(void *fdt);
-
 /*
  * The keystone2 SOC requires all 32 bit aliased addresses to be converted
  * to their 36 physical format. This has to happen after all fdt nodes
@@ -243,16 +221,45 @@ int fdt_increase_size(void *fdt, int add_len);
 
 int fdt_fixup_nor_flash_size(void *blob);
 
+struct node_info;
 #if defined(CONFIG_FDT_FIXUP_PARTITIONS)
-void fdt_fixup_mtdparts(void *fdt, void *node_info, int node_info_size);
+void fdt_fixup_mtdparts(void *fdt, const struct node_info *node_info,
+			int node_info_size);
 #else
-static inline void fdt_fixup_mtdparts(void *fdt, void *node_info,
-					int node_info_size) {}
+static inline void fdt_fixup_mtdparts(void *fdt,
+				      const struct node_info *node_info,
+				      int node_info_size)
+{
+}
 #endif
 
 void fdt_del_node_and_alias(void *blob, const char *alias);
+
+/**
+ * Translate an address from the DT into a CPU physical address
+ *
+ * The translation relies on the "ranges" property.
+ *
+ * @param blob		Pointer to device tree blob
+ * @param node_offset	Node DT offset
+ * @param in_addr	Pointer to the address to translate
+ * @return translated address or OF_BAD_ADDR on error
+ */
 u64 fdt_translate_address(const void *blob, int node_offset,
 			  const __be32 *in_addr);
+/**
+ * Translate a DMA address from the DT into a CPU physical address
+ *
+ * The translation relies on the "dma-ranges" property.
+ *
+ * @param blob		Pointer to device tree blob
+ * @param node_offset	Node DT offset
+ * @param in_addr	Pointer to the DMA address to translate
+ * @return translated DMA address or OF_BAD_ADDR on error
+ */
+u64 fdt_translate_dma_address(const void *blob, int node_offset,
+			      const __be32 *in_addr);
+
 int fdt_node_offset_by_compat_reg(void *blob, const char *compat,
 					phys_addr_t compat_off);
 int fdt_alloc_phandle(void *blob);
@@ -321,6 +328,16 @@ int fdt_setup_simplefb_node(void *fdt, int node, u64 base_address, u32 width,
 
 int fdt_overlay_apply_verbose(void *fdt, void *fdto);
 
+/**
+ * fdt_get_cells_len() - Get the length of a type of cell in top-level nodes
+ *
+ * Returns the length of the cell type in bytes (4 or 8).
+ *
+ * @blob: Pointer to device tree blob
+ * @nr_cells_name: Name to lookup, e.g. "#address-cells"
+ */
+int fdt_get_cells_len(const void *blob, char *nr_cells_name);
+
 #endif /* ifdef CONFIG_OF_LIBFDT */
 
 #ifdef USE_HOSTCC
@@ -329,5 +346,8 @@ int fdtdec_get_int(const void *blob, int node, const char *prop_name,
 #endif
 #ifdef CONFIG_FMAN_ENET
 int fdt_update_ethernet_dt(void *blob);
+#endif
+#ifdef CONFIG_FSL_MC_ENET
+void fdt_fixup_board_enet(void *blob);
 #endif
 #endif /* ifndef __FDT_SUPPORT_H */

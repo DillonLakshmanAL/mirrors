@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2013, Google Inc.
  *
@@ -5,8 +6,6 @@
  *
  * (C) Copyright 2000-2006
  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include "mkimage.h"
@@ -107,7 +106,7 @@ static int fit_image_process_hash(void *fit, const char *image_name,
  */
 static int fit_image_write_sig(void *fit, int noffset, uint8_t *value,
 		int value_len, const char *comment, const char *region_prop,
-		int region_proplen)
+		int region_proplen, const char *cmdname)
 {
 	int string_size;
 	int ret;
@@ -129,13 +128,18 @@ static int fit_image_write_sig(void *fit, int noffset, uint8_t *value,
 	}
 	if (comment && !ret)
 		ret = fdt_setprop_string(fit, noffset, "comment", comment);
-	if (!ret)
-		ret = fit_set_timestamp(fit, noffset, time(NULL));
+	if (!ret) {
+		time_t timestamp = imagetool_get_source_date(cmdname,
+							     time(NULL));
+
+		ret = fit_set_timestamp(fit, noffset, timestamp);
+	}
 	if (region_prop && !ret) {
 		uint32_t strdata[2];
 
 		ret = fdt_setprop(fit, noffset, "hashed-nodes",
 				   region_prop, region_proplen);
+		/* This is a legacy offset, it is unused, and must remain 0. */
 		strdata[0] = 0;
 		strdata[1] = cpu_to_fdt32(string_size);
 		if (!ret) {
@@ -163,14 +167,13 @@ static int fit_image_setup_sig(struct image_sign_info *info,
 	}
 
 	padding_name = fdt_getprop(fit, noffset, "padding", NULL);
-	if (!padding_name)
-		padding_name = "pkcs-1.5";
+
 	memset(info, '\0', sizeof(*info));
 	info->keydir = keydir;
-	info->keyname = fdt_getprop(fit, noffset, "key-name-hint", NULL);
+	info->keyname = fdt_getprop(fit, noffset, FIT_KEY_HINT, NULL);
 	info->fit = fit;
 	info->node_offset = noffset;
-	info->name = algo_name;
+	info->name = strdup(algo_name);
 	info->checksum = image_get_checksum_algo(algo_name);
 	info->crypto = image_get_crypto_algo(algo_name);
 	info->padding = image_get_padding_algo(padding_name);
@@ -206,7 +209,8 @@ static int fit_image_setup_sig(struct image_sign_info *info,
 static int fit_image_process_sig(const char *keydir, void *keydest,
 		void *fit, const char *image_name,
 		int noffset, const void *data, size_t size,
-		const char *comment, int require_keys, const char *engine_id)
+		const char *comment, int require_keys, const char *engine_id,
+		const char *cmdname)
 {
 	struct image_sign_info info;
 	struct image_region region;
@@ -234,7 +238,7 @@ static int fit_image_process_sig(const char *keydir, void *keydest,
 	}
 
 	ret = fit_image_write_sig(fit, noffset, value, value_len, comment,
-			NULL, 0);
+			NULL, 0, cmdname);
 	if (ret) {
 		if (ret == -FDT_ERR_NOSPACE)
 			return -ENOSPC;
@@ -245,20 +249,277 @@ static int fit_image_process_sig(const char *keydir, void *keydest,
 	free(value);
 
 	/* Get keyname again, as FDT has changed and invalidated our pointer */
-	info.keyname = fdt_getprop(fit, noffset, "key-name-hint", NULL);
-
-	if (keydest)
-		ret = info.crypto->add_verify_data(&info, keydest);
-	else
-		return -1;
+	info.keyname = fdt_getprop(fit, noffset, FIT_KEY_HINT, NULL);
 
 	/*
 	 * Write the public key into the supplied FDT file; this might fail
 	 * several times, since we try signing with successively increasing
 	 * size values
 	 */
-	if (keydest && ret)
-		return ret;
+	if (keydest) {
+		ret = info.crypto->add_verify_data(&info, keydest);
+		if (ret) {
+			printf("Failed to add verification data for '%s' signature node in '%s' image node\n",
+			       node_name, image_name);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int fit_image_read_data(char *filename, unsigned char *data,
+			       int expected_size)
+{
+	struct stat sbuf;
+	int fd, ret = -1;
+	ssize_t n;
+
+	/* Open file */
+	fd = open(filename, O_RDONLY | O_BINARY);
+	if (fd < 0) {
+		printf("Can't open file %s (err=%d => %s)\n",
+		       filename, errno, strerror(errno));
+		return -1;
+	}
+
+	/* Compute file size */
+	if (fstat(fd, &sbuf) < 0) {
+		printf("Can't fstat file %s (err=%d => %s)\n",
+		       filename, errno, strerror(errno));
+		goto err;
+	}
+
+	/* Check file size */
+	if (sbuf.st_size != expected_size) {
+		printf("File %s don't have the expected size (size=%ld, expected=%d)\n",
+		       filename, sbuf.st_size, expected_size);
+		goto err;
+	}
+
+	/* Read data */
+	n = read(fd, data, sbuf.st_size);
+	if (n < 0) {
+		printf("Can't read file %s (err=%d => %s)\n",
+		       filename, errno, strerror(errno));
+		goto err;
+	}
+
+	/* Check that we have read all the file */
+	if (n != sbuf.st_size) {
+		printf("Can't read all file %s (read %ld bytes, expexted %ld)\n",
+		       filename, n, sbuf.st_size);
+		goto err;
+	}
+
+	ret = 0;
+
+err:
+	close(fd);
+	return ret;
+}
+
+static int fit_image_setup_cipher(struct image_cipher_info *info,
+				  const char *keydir, void *fit,
+				  const char *image_name, int image_noffset,
+				  const char *node_name, int noffset)
+{
+	char *algo_name;
+	char filename[128];
+	int ret = -1;
+
+	if (fit_image_cipher_get_algo(fit, noffset, &algo_name)) {
+		printf("Can't get algo name for cipher '%s' in image '%s'\n",
+		       node_name, image_name);
+		goto out;
+	}
+
+	info->keydir = keydir;
+
+	/* Read the key name */
+	info->keyname = fdt_getprop(fit, noffset, FIT_KEY_HINT, NULL);
+	if (!info->keyname) {
+		printf("Can't get key name for cipher '%s' in image '%s'\n",
+		       node_name, image_name);
+		goto out;
+	}
+
+	/* Read the IV name */
+	info->ivname = fdt_getprop(fit, noffset, "iv-name-hint", NULL);
+	if (!info->ivname) {
+		printf("Can't get iv name for cipher '%s' in image '%s'\n",
+		       node_name, image_name);
+		goto out;
+	}
+
+	info->fit = fit;
+	info->node_noffset = noffset;
+	info->name = algo_name;
+
+	info->cipher = image_get_cipher_algo(algo_name);
+	if (!info->cipher) {
+		printf("Can't get algo for cipher '%s'\n", image_name);
+		goto out;
+	}
+
+	/* Read the key in the file */
+	snprintf(filename, sizeof(filename), "%s/%s%s",
+		 info->keydir, info->keyname, ".bin");
+	info->key = malloc(info->cipher->key_len);
+	if (!info->key) {
+		printf("Can't allocate memory for key\n");
+		ret = -1;
+		goto out;
+	}
+	ret = fit_image_read_data(filename, (unsigned char *)info->key,
+				  info->cipher->key_len);
+	if (ret < 0)
+		goto out;
+
+	/* Read the IV in the file */
+	snprintf(filename, sizeof(filename), "%s/%s%s",
+		 info->keydir, info->ivname, ".bin");
+	info->iv = malloc(info->cipher->iv_len);
+	if (!info->iv) {
+		printf("Can't allocate memory for iv\n");
+		ret = -1;
+		goto out;
+	}
+	ret = fit_image_read_data(filename, (unsigned char *)info->iv,
+				  info->cipher->iv_len);
+
+ out:
+	return ret;
+}
+
+int fit_image_write_cipher(void *fit, int image_noffset, int noffset,
+			   const void *data, size_t size,
+			   unsigned char *data_ciphered, int data_ciphered_len)
+{
+	int ret = -1;
+
+	/* Remove unciphered data */
+	ret = fdt_delprop(fit, image_noffset, FIT_DATA_PROP);
+	if (ret) {
+		printf("Can't remove data (err = %d)\n", ret);
+		goto out;
+	}
+
+	/* Add ciphered data */
+	ret = fdt_setprop(fit, image_noffset, FIT_DATA_PROP,
+			  data_ciphered, data_ciphered_len);
+	if (ret) {
+		printf("Can't add ciphered data (err = %d)\n", ret);
+		goto out;
+	}
+
+	/* add non ciphered data size */
+	ret = fdt_setprop_u32(fit, image_noffset, "data-size-unciphered", size);
+	if (ret) {
+		printf("Can't add unciphered data size (err = %d)\n", ret);
+		goto out;
+	}
+
+ out:
+	return ret;
+}
+
+static int
+fit_image_process_cipher(const char *keydir, void *keydest, void *fit,
+			 const char *image_name, int image_noffset,
+			 const char *node_name, int node_noffset,
+			 const void *data, size_t size,
+			 const char *cmdname)
+{
+	struct image_cipher_info info;
+	unsigned char *data_ciphered = NULL;
+	int data_ciphered_len;
+	int ret;
+
+	memset(&info, 0, sizeof(info));
+
+	ret = fit_image_setup_cipher(&info, keydir, fit, image_name,
+				     image_noffset, node_name, node_noffset);
+	if (ret)
+		goto out;
+
+	ret = info.cipher->encrypt(&info, data, size,
+				    &data_ciphered, &data_ciphered_len);
+	if (ret)
+		goto out;
+
+	/*
+	 * Write the public key into the supplied FDT file; this might fail
+	 * several times, since we try signing with successively increasing
+	 * size values
+	 */
+	if (keydest) {
+		ret = info.cipher->add_cipher_data(&info, keydest);
+		if (ret) {
+			printf("Failed to add verification data for cipher '%s' in image '%s'\n",
+			       info.keyname, image_name);
+			goto out;
+		}
+	}
+
+	ret = fit_image_write_cipher(fit, image_noffset, node_noffset,
+				     data, size,
+				     data_ciphered, data_ciphered_len);
+
+ out:
+	free(data_ciphered);
+	free((void *)info.key);
+	free((void *)info.iv);
+	return ret;
+}
+
+int fit_image_cipher_data(const char *keydir, void *keydest,
+			  void *fit, int image_noffset, const char *comment,
+			  int require_keys, const char *engine_id,
+			  const char *cmdname)
+{
+	const char *image_name;
+	const void *data;
+	size_t size;
+	int node_noffset;
+
+	/* Get image name */
+	image_name = fit_get_name(fit, image_noffset, NULL);
+	if (!image_name) {
+		printf("Can't get image name\n");
+		return -1;
+	}
+
+	/* Get image data and data length */
+	if (fit_image_get_data(fit, image_noffset, &data, &size)) {
+		printf("Can't get image data/size\n");
+		return -1;
+	}
+
+	/* Process all hash subnodes of the component image node */
+	for (node_noffset = fdt_first_subnode(fit, image_noffset);
+	     node_noffset >= 0;
+	     node_noffset = fdt_next_subnode(fit, node_noffset)) {
+		const char *node_name;
+		int ret = 0;
+
+		node_name = fit_get_name(fit, node_noffset, NULL);
+		if (!node_name) {
+			printf("Can't get node name\n");
+			return -1;
+		}
+
+		if (IMAGE_ENABLE_ENCRYPT && keydir &&
+		    !strncmp(node_name, FIT_CIPHER_NODENAME,
+			     strlen(FIT_CIPHER_NODENAME)))
+			ret = fit_image_process_cipher(keydir, keydest,
+						       fit, image_name,
+						       image_noffset,
+						       node_name, node_noffset,
+						       data, size, cmdname);
+		if (ret)
+			return ret;
+	}
 
 	return 0;
 }
@@ -274,16 +535,16 @@ static int fit_image_process_sig(const char *keydir, void *keydest,
  *
  * Input component image node structure:
  *
- * o image@1 (at image_noffset)
+ * o image-1 (at image_noffset)
  *   | - data = [binary data]
- *   o hash@1
+ *   o hash-1
  *     |- algo = "sha1"
  *
  * Output component image node structure:
  *
- * o image@1 (at image_noffset)
+ * o image-1 (at image_noffset)
  *   | - data = [binary data]
- *   o hash@1
+ *   o hash-1
  *     |- algo = "sha1"
  *     |- value = sha1(data)
  *
@@ -300,7 +561,7 @@ static int fit_image_process_sig(const char *keydir, void *keydest,
  */
 int fit_image_add_verification_data(const char *keydir, void *keydest,
 		void *fit, int image_noffset, const char *comment,
-		int require_keys, const char *engine_id)
+		int require_keys, const char *engine_id, const char *cmdname)
 {
 	const char *image_name;
 	const void *data;
@@ -325,7 +586,7 @@ int fit_image_add_verification_data(const char *keydir, void *keydest,
 		/*
 		 * Check subnode name, must be equal to "hash" or "signature".
 		 * Multiple hash nodes require unique unit node
-		 * names, e.g. hash@1, hash@2, signature@1, etc.
+		 * names, e.g. hash-1, hash-2, signature-1, etc.
 		 */
 		node_name = fit_get_name(fit, noffset, NULL);
 		if (!strncmp(node_name, FIT_HASH_NODENAME,
@@ -337,7 +598,7 @@ int fit_image_add_verification_data(const char *keydir, void *keydest,
 				strlen(FIT_SIG_NODENAME))) {
 			ret = fit_image_process_sig(keydir, keydest,
 				fit, image_name, noffset, data, size,
-				comment, require_keys, engine_id);
+				comment, require_keys, engine_id, cmdname);
 		}
 		if (ret)
 			return ret;
@@ -420,7 +681,6 @@ static int fit_config_get_hash_list(void *fit, int conf_noffset,
 	strlist_init(node_inc);
 	snprintf(name, sizeof(name), "%s/%s", FIT_CONFS_PATH, conf_name);
 	if (strlist_add(node_inc, "/") ||
-	    strlist_add(node_inc, FIT_CONFS_PATH) ||
 	    strlist_add(node_inc, name))
 		goto err_mem;
 
@@ -437,61 +697,52 @@ static int fit_config_get_hash_list(void *fit, int conf_noffset,
 		int noffset;
 		int image_noffset;
 		int hash_count;
-		int i, max_index;
 
-		max_index = fdt_stringlist_count(fit, conf_noffset, iname);
+		image_noffset = fit_conf_get_prop_node(fit, conf_noffset,
+						       iname);
+		if (image_noffset < 0) {
+			printf("Failed to find image '%s' in  configuration '%s/%s'\n",
+			       iname, conf_name, sig_name);
+			if (allow_missing)
+				continue;
 
-		for (i = 0; i < max_index; i++) {
-			image_noffset =
-				fit_conf_get_prop_node_index(fit, conf_noffset,
-							     iname, i);
-			if (image_noffset < 0) {
-				if (i > 0)
-					break;
+			return -ENOENT;
+		}
 
-				printf("Failed to find image '%s' in  configuration '%s/%s'\n",
-				       iname, conf_name, sig_name);
-				if (allow_missing)
-					continue;
+		ret = fdt_get_path(fit, image_noffset, path, sizeof(path));
+		if (ret < 0)
+			goto err_path;
+		if (strlist_add(node_inc, path))
+			goto err_mem;
 
-				return -ENOENT;
-			}
+		snprintf(name, sizeof(name), "%s/%s", FIT_CONFS_PATH,
+			 conf_name);
 
-			ret = fdt_get_path(fit, image_noffset, path, sizeof(path));
+		/* Add all this image's hashes */
+		hash_count = 0;
+		for (noffset = fdt_first_subnode(fit, image_noffset);
+		     noffset >= 0;
+		     noffset = fdt_next_subnode(fit, noffset)) {
+			const char *name = fit_get_name(fit, noffset, NULL);
+
+			if (strncmp(name, FIT_HASH_NODENAME,
+				    strlen(FIT_HASH_NODENAME)))
+				continue;
+			ret = fdt_get_path(fit, noffset, path, sizeof(path));
 			if (ret < 0)
 				goto err_path;
 			if (strlist_add(node_inc, path))
 				goto err_mem;
-
-			snprintf(name, sizeof(name), "%s/%s", FIT_CONFS_PATH,
-				 conf_name);
-
-			/* Add all this image's hashes */
-			hash_count = 0;
-			for (noffset = fdt_first_subnode(fit, image_noffset);
-			     noffset >= 0;
-			     noffset = fdt_next_subnode(fit, noffset)) {
-				const char *name = fit_get_name(fit, noffset, NULL);
-
-				if (strncmp(name, FIT_HASH_NODENAME,
-					    strlen(FIT_HASH_NODENAME)))
-					continue;
-				ret = fdt_get_path(fit, noffset, path, sizeof(path));
-				if (ret < 0)
-					goto err_path;
-				if (strlist_add(node_inc, path))
-					goto err_mem;
-				hash_count++;
-			}
-
-			if (!hash_count) {
-				printf("Failed to find any hash nodes in configuration '%s/%s' image '%s' - without these it is not possible to verify this image\n",
-				       conf_name, sig_name, iname);
-				return -ENOMSG;
-			}
-
-			image_count++;
+			hash_count++;
 		}
+
+		if (!hash_count) {
+			printf("Failed to find any hash nodes in configuration '%s/%s' image '%s' - without these it is not possible to verify this image\n",
+			       conf_name, sig_name, iname);
+			return -ENOMSG;
+		}
+
+		image_count++;
 	}
 
 	if (!image_count) {
@@ -588,7 +839,7 @@ static int fit_config_get_data(void *fit, int conf_noffset, int noffset,
 static int fit_config_process_sig(const char *keydir, void *keydest,
 		void *fit, const char *conf_name, int conf_noffset,
 		int noffset, const char *comment, int require_keys,
-		const char *engine_id)
+		const char *engine_id, const char *cmdname)
 {
 	struct image_sign_info info;
 	const char *node_name;
@@ -615,11 +866,15 @@ static int fit_config_process_sig(const char *keydir, void *keydest,
 	if (ret) {
 		printf("Failed to sign '%s' signature node in '%s' conf node\n",
 		       node_name, conf_name);
+
+		/* We allow keys to be missing */
+		if (ret == -ENOENT)
+			return 0;
 		return -1;
 	}
 
 	ret = fit_image_write_sig(fit, noffset, value, value_len, comment,
-				region_prop, region_proplen);
+				region_prop, region_proplen, cmdname);
 	if (ret) {
 		if (ret == -FDT_ERR_NOSPACE)
 			return -ENOSPC;
@@ -631,15 +886,13 @@ static int fit_config_process_sig(const char *keydir, void *keydest,
 	free(region_prop);
 
 	/* Get keyname again, as FDT has changed and invalidated our pointer */
-	info.keyname = fdt_getprop(fit, noffset, "key-name-hint", NULL);
+	info.keyname = fdt_getprop(fit, noffset, FIT_KEY_HINT, NULL);
 
 	/* Write the public key into the supplied FDT file */
 	if (keydest) {
 		ret = info.crypto->add_verify_data(&info, keydest);
-		if (ret == -ENOSPC)
-			return -ENOSPC;
 		if (ret) {
-			printf("Failed to add verification data for '%s' signature node in '%s' image node\n",
+			printf("Failed to add verification data for '%s' signature node in '%s' configuration node\n",
 			       node_name, conf_name);
 		}
 		return ret;
@@ -650,7 +903,7 @@ static int fit_config_process_sig(const char *keydir, void *keydest,
 
 static int fit_config_add_verification_data(const char *keydir, void *keydest,
 		void *fit, int conf_noffset, const char *comment,
-		int require_keys, const char *engine_id)
+		int require_keys, const char *engine_id, const char *cmdname)
 {
 	const char *conf_name;
 	int noffset;
@@ -669,8 +922,43 @@ static int fit_config_add_verification_data(const char *keydir, void *keydest,
 			     strlen(FIT_SIG_NODENAME))) {
 			ret = fit_config_process_sig(keydir, keydest,
 				fit, conf_name, conf_noffset, noffset, comment,
-				require_keys, engine_id);
+				require_keys, engine_id, cmdname);
 		}
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+int fit_cipher_data(const char *keydir, void *keydest, void *fit,
+		    const char *comment, int require_keys,
+		    const char *engine_id, const char *cmdname)
+{
+	int images_noffset;
+	int noffset;
+	int ret;
+
+	/* Find images parent node offset */
+	images_noffset = fdt_path_offset(fit, FIT_IMAGES_PATH);
+	if (images_noffset < 0) {
+		printf("Can't find images parent node '%s' (%s)\n",
+		       FIT_IMAGES_PATH, fdt_strerror(images_noffset));
+		return images_noffset;
+	}
+
+	/* Process its subnodes, print out component images details */
+	for (noffset = fdt_first_subnode(fit, images_noffset);
+	     noffset >= 0;
+	     noffset = fdt_next_subnode(fit, noffset)) {
+		/*
+		 * Direct child node of the images parent node,
+		 * i.e. component image node.
+		 */
+		ret = fit_image_cipher_data(keydir, keydest,
+					    fit, noffset, comment,
+					    require_keys, engine_id,
+					    cmdname);
 		if (ret)
 			return ret;
 	}
@@ -680,7 +968,7 @@ static int fit_config_add_verification_data(const char *keydir, void *keydest,
 
 int fit_add_verification_data(const char *keydir, void *keydest, void *fit,
 			      const char *comment, int require_keys,
-			      const char *engine_id)
+			      const char *engine_id, const char *cmdname)
 {
 	int images_noffset, confs_noffset;
 	int noffset;
@@ -703,7 +991,8 @@ int fit_add_verification_data(const char *keydir, void *keydest, void *fit,
 		 * i.e. component image node.
 		 */
 		ret = fit_image_add_verification_data(keydir, keydest,
-				fit, noffset, comment, require_keys, engine_id);
+				fit, noffset, comment, require_keys, engine_id,
+				cmdname);
 		if (ret)
 			return ret;
 	}
@@ -727,7 +1016,7 @@ int fit_add_verification_data(const char *keydir, void *keydest, void *fit,
 		ret = fit_config_add_verification_data(keydir, keydest,
 						       fit, noffset, comment,
 						       require_keys,
-						       engine_id);
+						       engine_id, cmdname);
 		if (ret)
 			return ret;
 	}
@@ -736,20 +1025,23 @@ int fit_add_verification_data(const char *keydir, void *keydest, void *fit,
 }
 
 #ifdef CONFIG_FIT_SIGNATURE
-int fit_check_sign(const void *fit, const void *key, int is_spl)
+int fit_check_sign(const void *fit, const void *key,
+		   const char *fit_uname_config)
 {
 	int cfg_noffset;
 	int ret;
 
-	cfg_noffset = fit_conf_get_node(fit, NULL);
+	cfg_noffset = fit_conf_get_node(fit, fit_uname_config);
 	if (!cfg_noffset)
 		return -1;
 
-	printf("Verifying Hash Integrity ... ");
+	printf("Verifying Hash Integrity for node '%s'... ",
+	       fdt_get_name(fit, cfg_noffset, NULL));
 	ret = fit_config_verify(fit, cfg_noffset);
 	if (ret)
 		return ret;
-	ret = bootm_host_load_images(fit, cfg_noffset, is_spl);
+	printf("Verified OK, loading images\n");
+	ret = bootm_host_load_images(fit, cfg_noffset);
 
 	return ret;
 }

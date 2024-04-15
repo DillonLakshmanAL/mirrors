@@ -1,10 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Common SPI Interface: Controller-specific definitions
  *
  * (C) Copyright 2001
  * Gerald Van Baren, Custom IDEAS, vanbaren@cideas.com.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef _SPI_H_
@@ -33,29 +32,16 @@
 #define SPI_RX_QUAD	BIT(13)			/* receive with 4 wires */
 #define SPI_TX_OCTAL	BIT(14)			/* transmit with 8 wires */
 #define SPI_RX_OCTAL	BIT(15)			/* receive with 8 wires */
-#define SPI_DMA_PREPARE	BIT(24)			/* dma transfer skip waiting idle, read without cache invalid */
 
 /* Header byte that marks the start of the message */
 #define SPI_PREAMBLE_END_BYTE	0xec
 
 #define SPI_DEFAULT_WORDLEN	8
 
-/**
- * struct dm_spi_bus - SPI bus info
- *
- * This contains information about a SPI bus. To obtain this structure, use
- * dev_get_uclass_priv(bus) where bus is the SPI bus udevice.
- *
- * @max_hz:	Maximum speed that the bus can tolerate.
- * @speed:	Current bus speed. This is 0 until the bus is first claimed.
- * @mode:	Current bus mode. This is 0 until the bus is first claimed.
- *
- * TODO(sjg@chromium.org): Remove this and use max_hz from struct spi_slave.
- */
+#ifdef CONFIG_DM_SPI
+/* TODO(sjg@chromium.org): Remove this and use max_hz from struct spi_slave */
 struct dm_spi_bus {
 	uint max_hz;
-	uint speed;
-	uint mode;
 };
 
 /**
@@ -78,6 +64,8 @@ struct dm_spi_slave_platdata {
 	uint mode;
 };
 
+#endif /* CONFIG_DM_SPI */
+
 /**
  * struct spi_slave - Representation of a SPI slave
  *
@@ -93,6 +81,8 @@ struct dm_spi_slave_platdata {
  *
  * @dev:		SPI slave device
  * @max_hz:		Maximum speed for this slave
+ * @speed:		Current bus speed. This is 0 until the bus is first
+ *			claimed.
  * @bus:		ID of the bus that the slave is attached to. For
  *			driver model this is the sequence number of the SPI
  *			bus (bus->seq) so does not need to be stored
@@ -110,6 +100,7 @@ struct spi_slave {
 #ifdef CONFIG_DM_SPI
 	struct udevice *dev;	/* struct spi_slave is dev->parentdata */
 	uint max_hz;
+	uint speed;
 #else
 	unsigned int bus;
 	unsigned int cs;
@@ -119,7 +110,6 @@ struct spi_slave {
 	unsigned int max_read_size;
 	unsigned int max_write_size;
 	void *memory_map;
-	u8 option;
 
 	u8 flags;
 #define SPI_XFER_BEGIN		BIT(0)	/* Assert CS before transfer */
@@ -127,15 +117,7 @@ struct spi_slave {
 #define SPI_XFER_ONCE		(SPI_XFER_BEGIN | SPI_XFER_END)
 #define SPI_XFER_MMAP		BIT(2)	/* Memory Mapped start */
 #define SPI_XFER_MMAP_END	BIT(3)	/* Memory Mapped End */
-#define SPI_XFER_PREPARE	BIT(7)	/* Transfer skip waiting idle */
 };
-
-/**
- * Initialization, must be called once on start up.
- *
- * TODO: I don't think we really need this.
- */
-void spi_init(void);
 
 /**
  * spi_do_alloc_slave - Allocate a new SPI slave (internal)
@@ -478,7 +460,7 @@ struct dm_spi_ops {
 	 * @cs:		The chip select (0..n-1)
 	 * @info:	Returns information about the chip select, if valid.
 	 *		On entry info->dev is NULL
-	 * @return 0 if OK (and @info is set up), -ENODEV if the chip select
+	 * @return 0 if OK (and @info is set up), -EINVAL if the chip select
 	 *	   is invalid, other -ve value on error
 	 */
 	int (*cs_info)(struct udevice *bus, uint cs, struct spi_cs_info *info);

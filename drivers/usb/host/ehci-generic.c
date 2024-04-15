@@ -1,11 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2015 Alexey Brodkin <abrodkin@synopsys.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
 #include <clk.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
 #include <dm/ofnode.h>
 #include <generic-phy.h>
 #include <reset.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * dfu_nand.c -- DFU for NAND routines.
  *
@@ -6,8 +7,6 @@
  * Based on dfu_mmc.c which is:
  * Copyright (C) 2012 Samsung Electronics
  * author: Lukasz Majewski <l.majewski@samsung.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -51,6 +50,7 @@ static int nand_block_op(enum dfu_op op, struct dfu_entity *dfu,
 					 lim, buf);
 	} else {
 		nand_erase_options_t opts;
+		int write_flags = WITH_WR_VERIFY;
 
 		memset(&opts, 0, sizeof(opts));
 		opts.offset = start;
@@ -63,8 +63,12 @@ static int nand_block_op(enum dfu_op op, struct dfu_entity *dfu,
 		if (ret)
 			return ret;
 		/* then write */
+#ifdef CONFIG_DFU_NAND_TRIMFFS
+		if (dfu->data.nand.ubi)
+			write_flags |= WITH_DROP_FFS;
+#endif
 		ret = nand_write_skip_bad(mtd, start, &count, &actual,
-					  lim, buf, WITH_WR_VERIFY);
+					  lim, buf, write_flags);
 	}
 
 	if (ret != 0) {
@@ -192,9 +196,8 @@ unsigned int dfu_polltimeout_nand(struct dfu_entity *dfu)
 int dfu_fill_entity_nand(struct dfu_entity *dfu, char *devstr, char *s)
 {
 	char *st;
-#ifndef CONFIG_SPL_BUILD
 	int ret, dev, part;
-#endif
+
 	dfu->data.nand.ubi = 0;
 	dfu->dev_type = DFU_DEV_NAND;
 	st = strsep(&s, " ");
@@ -204,7 +207,6 @@ int dfu_fill_entity_nand(struct dfu_entity *dfu, char *devstr, char *s)
 		s++;
 		dfu->data.nand.size = simple_strtoul(s, &s, 16);
 	} else if ((!strcmp(st, "part")) || (!strcmp(st, "partubi"))) {
-#ifndef CONFIG_SPL_BUILD
 		char mtd_id[32];
 		struct mtd_device *mtd_dev;
 		u8 part_num;
@@ -217,7 +219,7 @@ int dfu_fill_entity_nand(struct dfu_entity *dfu, char *devstr, char *s)
 		part = simple_strtoul(s, &s, 10);
 
 		sprintf(mtd_id, "%s%d,%d", "nand", dev, part - 1);
-		printf("using id '%s'\n", mtd_id);
+		debug("using id '%s'\n", mtd_id);
 
 		mtdparts_init();
 
@@ -231,7 +233,6 @@ int dfu_fill_entity_nand(struct dfu_entity *dfu, char *devstr, char *s)
 		dfu->data.nand.size = pi->size;
 		if (!strcmp(st, "partubi"))
 			dfu->data.nand.ubi = 1;
-#endif
 	} else {
 		printf("%s: Memory layout (%s) not supported!\n", __func__, st);
 		return -1;

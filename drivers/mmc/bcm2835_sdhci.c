@@ -41,6 +41,7 @@
 #include <malloc.h>
 #include <memalign.h>
 #include <sdhci.h>
+#include <time.h>
 #include <asm/arch/msg.h>
 #include <asm/arch/mbox.h>
 #include <mach/sdhci.h>
@@ -49,6 +50,11 @@
 /* 400KHz is max freq for card ID etc. Use that as min */
 #define MIN_FREQ 400000
 #define SDHCI_BUFFER 0x20
+
+struct bcm2835_sdhci_plat {
+	struct mmc_config cfg;
+	struct mmc mmc;
+};
 
 struct bcm2835_sdhci_host {
 	struct sdhci_host host;
@@ -75,7 +81,8 @@ static inline void bcm2835_sdhci_raw_writel(struct sdhci_host *host, u32 val,
 	 * too)
 	 */
 	if (reg != SDHCI_BUFFER) {
-		while (timer_get_us() - bcm_host->last_write < bcm_host->twoticks_delay)
+		while (timer_get_us() - bcm_host->last_write <
+		       bcm_host->twoticks_delay)
 			;
 	}
 
@@ -172,12 +179,13 @@ static int bcm2835_sdhci_probe(struct udevice *dev)
 	fdt_addr_t base;
 	int emmc_freq;
 	int ret;
+	int clock_id = (int)dev_get_driver_data(dev);
 
 	base = devfdt_get_addr(dev);
 	if (base == FDT_ADDR_T_NONE)
 		return -EINVAL;
 
-	ret = bcm2835_get_mmc_clock();
+	ret = bcm2835_get_mmc_clock(clock_id);
 	if (ret < 0) {
 		debug("%s: Failed to set MMC clock (err=%d)\n", __func__, ret);
 		return ret;
@@ -208,6 +216,9 @@ static int bcm2835_sdhci_probe(struct udevice *dev)
 	host->voltages = MMC_VDD_32_33 | MMC_VDD_33_34 | MMC_VDD_165_195;
 	host->ops = &bcm2835_ops;
 
+	host->mmc = &plat->mmc;
+	host->mmc->dev = dev;
+
 	ret = sdhci_setup_cfg(&plat->cfg, host, emmc_freq, MIN_FREQ);
 	if (ret) {
 		debug("%s: Failed to setup SDHCI (err=%d)\n", __func__, ret);
@@ -215,14 +226,20 @@ static int bcm2835_sdhci_probe(struct udevice *dev)
 	}
 
 	upriv->mmc = &plat->mmc;
-	host->mmc = &plat->mmc;
 	host->mmc->priv = host;
 
 	return sdhci_probe(dev);
 }
 
 static const struct udevice_id bcm2835_sdhci_match[] = {
-	{ .compatible = "brcm,bcm2835-sdhci" },
+	{
+		.compatible = "brcm,bcm2835-sdhci",
+		.data = BCM2835_MBOX_CLOCK_ID_EMMC
+	},
+	{
+		.compatible = "brcm,bcm2711-emmc2",
+		.data = BCM2835_MBOX_CLOCK_ID_EMMC2
+	},
 	{ /* sentinel */ }
 };
 

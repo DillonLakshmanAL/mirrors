@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Usefuls routines based on the LzmaTest.c file from LZMA SDK 4.65
  *
@@ -5,8 +6,6 @@
  * Luigi 'Comio' Mantellini (luigi.mantellini@idf-hit.com)
  *
  * Copyright (C) 1999-2005 Igor Pavlov
- *
- * SPDX-License-Identifier:	GPL-2.0+ 
  */
 
 /*
@@ -22,7 +21,7 @@
 #include <common.h>
 #include <watchdog.h>
 
-#if CONFIG_IS_ENABLED(LZMA)
+#ifdef CONFIG_LZMA
 
 #define LZMA_PROPERTIES_OFFSET 0
 #define LZMA_SIZE_OFFSET       LZMA_PROPS_SIZE
@@ -36,16 +35,6 @@
 
 static void *SzAlloc(void *p, size_t size) { return malloc(size); }
 static void SzFree(void *p, void *address) { free(address); }
-
-int lzma_is_valid(const unsigned char *buf)
-{
-	if (buf[0] != 0x5d || buf[1] || buf[2])
-		return 0;
-	if (buf[12] && buf[12] != 0xff)
-		return 0;
-
-	return 1;
-}
 
 int lzmaBuffToBuffDecompress (unsigned char *outStream, SizeT *uncompressedSize,
                   unsigned char *inStream,  SizeT  length)

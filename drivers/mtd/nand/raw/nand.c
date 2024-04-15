@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * (C) Copyright 2005
  * 2N Telekomunikace, a.s. <www.2n.cz>
  * Ladislav Michl <michl@2n.cz>
- *
- * SPDX-License-Identifier:	GPL-2.0
  */
 
 #include <common.h>
@@ -14,8 +13,6 @@
 #ifndef CONFIG_SYS_NAND_BASE_LIST
 #define CONFIG_SYS_NAND_BASE_LIST { CONFIG_SYS_NAND_BASE }
 #endif
-
-DECLARE_GLOBAL_DATA_PTR;
 
 int nand_curr_device = -1;
 
@@ -62,7 +59,7 @@ int nand_register(int devnum, struct mtd_info *mtd)
 	sprintf(dev_name[devnum], "nand%d", devnum);
 	mtd->name = dev_name[devnum];
 
-#ifdef CONFIG_MTD_DEVICE
+#ifdef CONFIG_MTD
 	/*
 	 * Add MTD device so that we can reference it later
 	 * via the mtdcore infrastructure (e.g. ubi).

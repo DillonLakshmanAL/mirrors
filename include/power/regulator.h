@@ -1,8 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  *  Copyright (C) 2014-2015 Samsung Electronics
  *  Przemyslaw Marczak <p.marczak@samsung.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef _INCLUDE_REGULATOR_H_
@@ -151,6 +150,7 @@ enum regulator_flag {
  * @always_on* - bool type, true or false
  * @boot_on*   - bool type, true or false
  * TODO(sjg@chromium.org): Consider putting the above two into @flags
+ * @ramp_delay - Time to settle down after voltage change (unit: uV/us)
  * @flags:     - flags value (see REGULATOR_FLAG_...)
  * @name**     - fdt regulator name - should be taken from the device tree
  * ctrl_reg:   - Control register offset used to enable/disable regulator
@@ -171,6 +171,7 @@ struct dm_regulator_uclass_platdata {
 	int init_uV;
 	int min_uA;
 	int max_uA;
+	unsigned int ramp_delay;
 	bool always_on;
 	bool boot_on;
 	const char *name;
@@ -178,9 +179,7 @@ struct dm_regulator_uclass_platdata {
 	u8 ctrl_reg;
 	u8 volt_reg;
 	bool suspend_on;
-	bool ignore;
 	u32 suspend_uV;
-	u32 ramp_delay;
 };
 
 /* Regulator device operations */
@@ -196,6 +195,17 @@ struct dm_regulator_ops {
 	 */
 	int (*get_value)(struct udevice *dev);
 	int (*set_value)(struct udevice *dev, int uV);
+
+	/**
+	 * The regulator suspend output value function calls operates
+	 * on a micro Volts.
+	 *
+	 * get/set_suspen_value - get/set suspend mode output value
+	 * @dev          - regulator device
+	 * Sets:
+	 * @uV           - set the suspend output value [micro Volts]
+	 * @return output value [uV] on success or negative errno if fail.
+	 */
 	int (*set_suspend_value)(struct udevice *dev, int uV);
 	int (*get_suspend_value)(struct udevice *dev);
 
@@ -222,6 +232,17 @@ struct dm_regulator_ops {
 	 */
 	int (*get_enable)(struct udevice *dev);
 	int (*set_enable)(struct udevice *dev, bool enable);
+
+	/**
+	 * The most basic feature of the regulator output is its enable state
+	 * in suspend mode.
+	 *
+	 * get/set_suspend_enable - get/set enable state of the suspend output
+	 * @dev           - regulator device
+	 * Sets:
+	 * @enable         - set true - enable or false - disable
+	 * @return true/false for get or -errno if fail; 0 / -errno for set.
+	 */
 	int (*set_suspend_enable)(struct udevice *dev, bool enable);
 	int (*get_suspend_enable)(struct udevice *dev);
 
@@ -241,15 +262,6 @@ struct dm_regulator_ops {
 	 */
 	int (*get_mode)(struct udevice *dev);
 	int (*set_mode)(struct udevice *dev, int mode_id);
-
-	/**
-	 * The regulator voltage set ramp delay
-	 *
-	 * @dev            - regulator device
-	 * @ramp_delay     - ramp delay [uV/uS]
-	 * @return zero on success and other failed.
-	 */
-	int (*set_ramp_delay)(struct udevice *dev, u32 ramp_delay);
 };
 
 /**
@@ -340,6 +352,17 @@ int regulator_get_enable(struct udevice *dev);
 int regulator_set_enable(struct udevice *dev, bool enable);
 
 /**
+ * regulator_set_enable_if_allowed: set regulator enable state if allowed by
+ *					regulator
+ *
+ * @dev    - pointer to the regulator device
+ * @enable - set true or false
+ * @return - 0 on success or if enabling is not supported
+ *	     -errno val if fails.
+ */
+int regulator_set_enable_if_allowed(struct udevice *dev, bool enable);
+
+/**
  * regulator_set_suspend_enable: set regulator suspend enable state
  *
  * @dev    - pointer to the regulator device
@@ -352,7 +375,7 @@ int regulator_set_suspend_enable(struct udevice *dev, bool enable);
  * regulator_get_suspend_enable: get regulator suspend enable state
  *
  * @dev    - pointer to the regulator device
- * @return - 0 on success or -errno val if fails
+ * @return - true/false of enable state or -errno val if fails
  */
 int regulator_get_suspend_enable(struct udevice *dev);
 
@@ -395,11 +418,23 @@ int regulator_set_mode(struct udevice *dev, int mode_id);
 int regulators_enable_boot_on(bool verbose);
 
 /**
- * regulators_enable_state_mem() - enable regulators state mem configure
+ * regulator_autoset: setup the voltage/current on a regulator
  *
- * This sets regulator-state-mem state for all regulators ;
+ * The setup depends on constraints found in device's uclass's platform data
+ * (struct dm_regulator_uclass_platdata):
+ *
+ * - Enable - will set - if any of: 'always_on' or 'boot_on' is set to true,
+ *   or if both are unset, then the function returns
+ * - Voltage value - will set - if '.min_uV' and '.max_uV' values are equal
+ * - Current limit - will set - if '.min_uA' and '.max_uA' values are equal
+ *
+ * The function returns on the first-encountered error.
+ *
+ * @platname - expected string for dm_regulator_uclass_platdata .name field
+ * @devp     - returned pointer to the regulator device - if non-NULL passed
+ * @return: 0 on success or negative value of errno.
  */
-int regulators_enable_state_mem(bool verbose);
+int regulator_autoset(struct udevice *dev);
 
 /**
  * regulator_autoset_by_name: setup the regulator given by its uclass's

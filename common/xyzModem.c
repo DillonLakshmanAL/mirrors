@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: eCos-2.0
 /*
  *==========================================================================
  *
@@ -5,8 +6,6 @@
  *
  *      RedBoot stream handler for xyzModem protocol
  *
- *==========================================================================
- * SPDX-License-Identifier:	eCos-2.0
  *==========================================================================
  *#####DESCRIPTIONBEGIN####
  *
@@ -25,7 +24,8 @@
 #include <common.h>
 #include <xyzModem.h>
 #include <stdarg.h>
-#include <crc.h>
+#include <u-boot/crc.h>
+#include <watchdog.h>
 
 /* Assumption - run xyzModem protocol over the console port */
 
@@ -52,19 +52,19 @@ static struct
   unsigned long file_length, read_length;
 } xyz;
 
-#define _xyzModem_CHAR_TIMEOUT            2000	/* 2 seconds */
+#define xyzModem_CHAR_TIMEOUT            2000	/* 2 seconds */
 #define xyzModem_MAX_RETRIES             20
 #define xyzModem_MAX_RETRIES_WITH_CRC    10
 #define xyzModem_CAN_COUNT                3	/* Wait for 3 CAN before quitting */
 
-int xyzModem_CHAR_TIMEOUT = _xyzModem_CHAR_TIMEOUT;
 
 typedef int cyg_int32;
-int
+static int
 CYGACC_COMM_IF_GETC_TIMEOUT (char chan, char *c)
 {
 
   ulong now = get_timer(0);
+  WATCHDOG_RESET();
   while (!tstc ())
     {
       if (get_timer(now) > xyzModem_CHAR_TIMEOUT)
@@ -78,7 +78,7 @@ CYGACC_COMM_IF_GETC_TIMEOUT (char chan, char *c)
   return 0;
 }
 
-void
+static void
 CYGACC_COMM_IF_PUTC (char x, char y)
 {
   putc (y);
@@ -173,7 +173,7 @@ parse_num (char *s, unsigned long *val, char **es, char *delim)
 }
 
 
-#ifdef DEBUG
+#if defined(DEBUG) && !CONFIG_IS_ENABLED(USE_TINY_PRINTF)
 /*
  * Note: this debug setup works by storing the strings in a fixed buffer
  */
@@ -182,15 +182,16 @@ static char *zm_out = zm_debug_buf;
 static char *zm_out_start = zm_debug_buf;
 
 static int
-zm_dprintf (char *fmt, ...)
+zm_dprintf(char *fmt, ...)
 {
-  int len;
-  va_list args;
+	int len;
+	va_list args;
 
-  va_start (args, fmt);
-  len = diag_vsprintf (zm_out, fmt, args);
-  zm_out += len;
-  return len;
+	va_start(args, fmt);
+	len = diag_vsprintf(zm_out, fmt, args);
+	va_end(args);
+	zm_out += len;
+	return len;
 }
 
 static void

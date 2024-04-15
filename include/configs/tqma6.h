@@ -1,9 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (C) 2013, 2014, 2017 Markus Niebel <Markus.Niebel@tq-group.com>
  *
  * Configuration settings for the TQ Systems TQMa6<Q,D,DL,S> module.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef __CONFIG_H
@@ -18,11 +17,6 @@
 /* #endif */
 
 /* place code in last 4 MiB of RAM */
-#if defined(CONFIG_TQMA6S)
-#define CONFIG_SYS_TEXT_BASE		0x2fc00000
-#elif defined(CONFIG_TQMA6Q) || defined(CONFIG_TQMA6DL)
-#define CONFIG_SYS_TEXT_BASE		0x4fc00000
-#endif
 
 #include "mx6_common.h"
 
@@ -36,17 +30,9 @@
 
 #define CONFIG_MXC_UART
 
-/* SPI */
-#define CONFIG_MXC_SPI
-
 /* SPI Flash */
 
 #define TQMA6_SPI_FLASH_SECTOR_SIZE	SZ_64K
-
-#define CONFIG_SF_DEFAULT_BUS	0
-#define CONFIG_SF_DEFAULT_CS	0
-#define CONFIG_SF_DEFAULT_SPEED	50000000
-#define CONFIG_SF_DEFAULT_MODE	(SPI_MODE_0)
 
 /* I2C Configs */
 #define CONFIG_SYS_I2C
@@ -79,11 +65,9 @@
 
 #define CONFIG_FEC_MXC
 #define IMX_FEC_BASE			ENET_BASE_ADDR
-#define CONFIG_MII
 
 #define CONFIG_ARP_TIMEOUT		200UL
 
-#define CONFIG_ENV_SIZE			(SZ_8K)
 /* Size of malloc() pool */
 #define CONFIG_SYS_MALLOC_LEN		(CONFIG_ENV_SIZE + 2 * SZ_1M)
 
@@ -93,7 +77,6 @@
 #define TQMA6_UBOOT_SECTOR_START	0x2
 #define TQMA6_UBOOT_SECTOR_COUNT	0x7fe
 
-#define CONFIG_ENV_OFFSET		SZ_1M
 #define CONFIG_SYS_MMC_ENV_DEV		0
 
 #define TQMA6_FDT_OFFSET		(2 * SZ_1M)
@@ -162,17 +145,6 @@
 #define TQMA6_UBOOT_SECTOR_COUNT	0x8
 #define TQMA6_UBOOT_SIZE		(TQMA6_UBOOT_SECTOR_SIZE * \
 					 TQMA6_UBOOT_SECTOR_COUNT)
-
-#define CONFIG_SYS_REDUNDAND_ENVIRONMENT
-#define CONFIG_ENV_OFFSET		(TQMA6_UBOOT_SIZE)
-#define CONFIG_ENV_SECT_SIZE		TQMA6_SPI_FLASH_SECTOR_SIZE
-#define CONFIG_ENV_OFFSET_REDUND	(CONFIG_ENV_OFFSET + \
-					 CONFIG_ENV_SECT_SIZE)
-
-#define CONFIG_ENV_SPI_BUS		(CONFIG_SF_DEFAULT_BUS)
-#define CONFIG_ENV_SPI_CS		(CONFIG_SF_DEFAULT_CS)
-#define CONFIG_ENV_SPI_MAX_HZ		(CONFIG_SF_DEFAULT_SPEED)
-#define CONFIG_ENV_SPI_MODE		(CONFIG_SF_DEFAULT_MODE)
 
 #define TQMA6_FDT_OFFSET		(CONFIG_ENV_OFFSET_REDUND + \
 					 CONFIG_ENV_SECT_SIZE)
@@ -332,7 +304,6 @@
 	TQMA6_EXTRA_BOOTDEV_ENV_SETTINGS                                      \
 
 /* Physical Memory Map */
-#define CONFIG_NR_DRAM_BANKS		1
 #define PHYS_SDRAM			MMDC0_ARB_BASE_ADDR
 
 #define CONFIG_SYS_SDRAM_BASE		PHYS_SDRAM

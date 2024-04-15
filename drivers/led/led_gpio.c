@@ -1,18 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2015 Google, Inc
  * Written by Simon Glass <sjg@chromium.org>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
 #include <dm.h>
 #include <errno.h>
 #include <led.h>
+#include <malloc.h>
 #include <asm/gpio.h>
 #include <dm/lists.h>
-
-DECLARE_GLOBAL_DATA_PTR;
 
 struct led_gpio_priv {
 	struct gpio_desc gpio;
@@ -60,7 +58,6 @@ static int led_gpio_probe(struct udevice *dev)
 {
 	struct led_uc_plat *uc_plat = dev_get_uclass_platdata(dev);
 	struct led_gpio_priv *priv = dev_get_priv(dev);
-	const char *state;
 	int ret;
 
 	/* Ignore the top-level LED node */
@@ -68,21 +65,10 @@ static int led_gpio_probe(struct udevice *dev)
 		return 0;
 
 	ret = gpio_request_by_name(dev, "gpios", 0, &priv->gpio, GPIOD_IS_OUT);
-	if (ret) {
-		printf("Failed to request gpios of led '%s'\n", uc_plat->label);
+	if (ret)
 		return ret;
-	}
 
-	/* Apply default state */
-	state = dev_read_prop(dev, "default-state", NULL);
-	if (state) {
-		if (!strcmp(state, "on"))
-			ret = gpio_led_set_state(dev, LEDST_ON);
-		else if (!strcmp(state, "off"))
-			ret = gpio_led_set_state(dev, LEDST_OFF);
-	}
-
-	return ret;
+	return 0;
 }
 
 static int led_gpio_remove(struct udevice *dev)

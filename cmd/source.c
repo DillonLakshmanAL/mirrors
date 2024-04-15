@@ -1,8 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2001
  * Kyle Harris, kharris@nexus-tech.net
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 /*
@@ -17,21 +16,39 @@
 
 #include <common.h>
 #include <command.h>
+#include <env.h>
 #include <image.h>
 #include <malloc.h>
 #include <mapmem.h>
 #include <asm/byteorder.h>
 #include <asm/io.h>
 
-int
-source (ulong addr, const char *fit_uname)
+#if defined(CONFIG_FIT)
+/**
+ * get_default_image() - Return default property from /images
+ *
+ * Return: Pointer to value of default property (or NULL)
+ */
+static const char *get_default_image(const void *fit)
+{
+	int images_noffset;
+
+	images_noffset = fdt_path_offset(fit, FIT_IMAGES_PATH);
+	if (images_noffset < 0)
+		return NULL;
+
+	return fdt_getprop(fit, images_noffset, FIT_DEFAULT_PROP, NULL);
+}
+#endif
+
+int image_source_script(ulong addr, const char *fit_uname)
 {
 	ulong		len;
-#if defined(CONFIG_IMAGE_FORMAT_LEGACY)
+#if defined(CONFIG_LEGACY_IMAGE_FORMAT)
 	const image_header_t *hdr;
 #endif
 	u32		*data;
-
+	int		verify;
 	void *buf;
 #if defined(CONFIG_FIT)
 	const void*	fit_hdr;
@@ -39,16 +56,12 @@ source (ulong addr, const char *fit_uname)
 	const void	*fit_data;
 	size_t		fit_len;
 #endif
-#if defined(CONFIG_IMAGE_FORMAT_LEGACY) || defined(CONFIG_FIT)
-#ifdef CONFIG_FIT_SIGNATURE
-	int		verify = 1;
-#else
-	int		verify = env_get_yesno("verify");
-#endif
-#endif
+
+	verify = env_get_yesno("verify");
+
 	buf = map_sysmem(addr, 0);
 	switch (genimg_get_format(buf)) {
-#if defined(CONFIG_IMAGE_FORMAT_LEGACY)
+#if defined(CONFIG_LEGACY_IMAGE_FORMAT)
 	case IMAGE_FORMAT_LEGACY:
 		hdr = buf;
 
@@ -87,19 +100,22 @@ source (ulong addr, const char *fit_uname)
 		 * past the zero-terminated sequence of image lengths to get
 		 * to the actual image data
 		 */
-		while (*data++ != IMAGE_PARAM_INVAL);
+		while (*data++);
 		break;
 #endif
 #if defined(CONFIG_FIT)
 	case IMAGE_FORMAT_FIT:
-		if (fit_uname == NULL) {
-			puts ("No FIT subimage unit name\n");
-			return 1;
-		}
-
 		fit_hdr = buf;
 		if (!fit_check_format (fit_hdr)) {
 			puts ("Bad FIT image format\n");
+			return 1;
+		}
+
+		if (!fit_uname)
+			fit_uname = get_default_image(fit_hdr);
+
+		if (!fit_uname) {
+			puts("No FIT subimage unit name\n");
 			return 1;
 		}
 
@@ -117,19 +133,6 @@ source (ulong addr, const char *fit_uname)
 
 		/* verify integrity */
 		if (verify) {
-#ifdef CONFIG_FIT_SIGNATURE
-			int conf_noffset;
-
-			/* NULL for default conf */
-			conf_noffset = fit_conf_get_node(fit_hdr, NULL);
-			if (conf_noffset < 0)
-				return conf_noffset;
-
-			if (fit_config_verify(fit_hdr, conf_noffset)) {
-				puts ("Bad Data Hash\n");
-				return 1;
-			}
-#endif
 			if (!fit_image_verify(fit_hdr, noffset)) {
 				puts ("Bad Data Hash\n");
 				return 1;
@@ -168,7 +171,8 @@ static int do_source(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 		addr = CONFIG_SYS_LOAD_ADDR;
 		debug ("*  source: default load address = 0x%08lx\n", addr);
 #if defined(CONFIG_FIT)
-	} else if (fit_parse_subimage (argv[1], load_addr, &addr, &fit_uname)) {
+	} else if (fit_parse_subimage(argv[1], image_load_addr, &addr,
+				      &fit_uname)) {
 		debug ("*  source: subimage '%s' from FIT image at 0x%08lx\n",
 				fit_uname, addr);
 #endif
@@ -178,7 +182,7 @@ static int do_source(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	}
 
 	printf ("## Executing script at %08lx\n", addr);
-	rcode = source (addr, fit_uname);
+	rcode = image_source_script(addr, fit_uname);
 	return rcode;
 }
 

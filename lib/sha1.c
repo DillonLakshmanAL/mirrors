@@ -1,11 +1,10 @@
+// SPDX-License-Identifier: LGPL-2.1
 /*
  *  Heiko Schocher, DENX Software Engineering, hs@denx.de.
  *  based on:
  *  FIPS-180-1 compliant SHA-1 implementation
  *
  *  Copyright (C) 2003-2006  Christophe Devine
- *
- * SPDX-License-Identifier:	LGPL-2.1
  */
 /*
  *  The SHA-1 standard was published by NIST in 1993.
@@ -25,15 +24,6 @@
 #endif /* USE_HOSTCC */
 #include <watchdog.h>
 #include <u-boot/sha1.h>
-
-#include <linux/compiler.h>
-
-#ifdef USE_HOSTCC
-#undef __weak
-#define __weak
-#undef __maybe_unused
-#define __maybe_unused
-#endif
 
 const uint8_t sha1_der_prefix[SHA1_DER_LEN] = {
 	0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x0e,
@@ -75,7 +65,7 @@ void sha1_starts (sha1_context * ctx)
 	ctx->state[4] = 0xC3D2E1F0;
 }
 
-static void __maybe_unused sha1_process_one(sha1_context *ctx, const unsigned char data[64])
+static void sha1_process(sha1_context *ctx, const unsigned char data[64])
 {
 	unsigned long temp, W[16], A, B, C, D, E;
 
@@ -229,18 +219,6 @@ static void __maybe_unused sha1_process_one(sha1_context *ctx, const unsigned ch
 	ctx->state[4] += E;
 }
 
-__weak void sha1_process(sha1_context *ctx, const unsigned char *data,
-			 unsigned int blocks)
-{
-	if (!blocks)
-		return;
-
-	while (blocks--) {
-		sha1_process_one(ctx, data);
-		data += 64;
-	}
-}
-
 /*
  * SHA-1 process buffer
  */
@@ -264,15 +242,17 @@ void sha1_update(sha1_context *ctx, const unsigned char *input,
 
 	if (left && ilen >= fill) {
 		memcpy ((void *) (ctx->buffer + left), (void *) input, fill);
-		sha1_process(ctx, ctx->buffer, 1);
+		sha1_process (ctx, ctx->buffer);
 		input += fill;
 		ilen -= fill;
 		left = 0;
 	}
 
-	sha1_process(ctx, input, ilen / 64);
-	input += ilen / 64 * 64;
-	ilen = ilen % 64;
+	while (ilen >= 64) {
+		sha1_process (ctx, input);
+		input += 64;
+		ilen -= 64;
+	}
 
 	if (ilen > 0) {
 		memcpy ((void *) (ctx->buffer + left), (void *) input, ilen);

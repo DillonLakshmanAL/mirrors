@@ -1,7 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (c) 2011 The Chromium OS Authors.
  * Copyright (c) 2011, NVIDIA Corp. All rights reserved.
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef _ASM_GENERIC_GPIO_H_
@@ -248,7 +248,7 @@ int gpio_xlate_offs_flags(struct udevice *dev, struct gpio_desc *desc,
  */
 struct dm_gpio_ops {
 	int (*request)(struct udevice *dev, unsigned offset, const char *label);
-	int (*free)(struct udevice *dev, unsigned offset);
+	int (*rfree)(struct udevice *dev, unsigned int offset);
 	int (*direction_input)(struct udevice *dev, unsigned offset);
 	int (*direction_output)(struct udevice *dev, unsigned offset,
 				int value);

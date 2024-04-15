@@ -1,13 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2012 Sughosh Ganu <urwithsughosh@gmail.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
+#include <malloc.h>
 #include <asm/io.h>
 #include <clk.h>
 #include <dm.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
 #include <dm/ofnode.h>
 #include <generic-phy.h>
 #include <reset.h>

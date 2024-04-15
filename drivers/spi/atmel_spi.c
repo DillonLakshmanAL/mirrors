@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2007 Atmel Corporation
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 #include <common.h>
 #include <clk.h>
@@ -18,13 +17,11 @@
 #ifdef CONFIG_DM_SPI
 #include <asm/arch/at91_spi.h>
 #endif
-#ifdef CONFIG_DM_GPIO
+#if CONFIG_IS_ENABLED(DM_GPIO)
 #include <asm/gpio.h>
 #endif
 
 #include "atmel_spi.h"
-
-DECLARE_GLOBAL_DATA_PTR;
 
 #ifndef CONFIG_DM_SPI
 
@@ -35,11 +32,6 @@ static int spi_has_wdrbt(struct atmel_spi_slave *slave)
 	ver = spi_readl(slave, VERSION);
 
 	return (ATMEL_SPI_VERSION_REV(ver) >= 0x210);
-}
-
-void spi_init()
-{
-
 }
 
 struct spi_slave *spi_setup_slave(unsigned int bus, unsigned int cs,
@@ -236,7 +228,7 @@ struct atmel_spi_priv {
 	unsigned int freq;		/* Default frequency */
 	unsigned int mode;
 	ulong bus_clk_rate;
-#ifdef CONFIG_DM_GPIO
+#if CONFIG_IS_ENABLED(DM_GPIO)
 	struct gpio_desc cs_gpios[MAX_CS_COUNT];
 #endif
 };
@@ -293,7 +285,7 @@ static int atmel_spi_release_bus(struct udevice *dev)
 
 static void atmel_spi_cs_activate(struct udevice *dev)
 {
-#ifdef CONFIG_DM_GPIO
+#if CONFIG_IS_ENABLED(DM_GPIO)
 	struct udevice *bus = dev_get_parent(dev);
 	struct atmel_spi_priv *priv = dev_get_priv(bus);
 	struct dm_spi_slave_platdata *slave_plat = dev_get_parent_platdata(dev);
@@ -308,7 +300,7 @@ static void atmel_spi_cs_activate(struct udevice *dev)
 
 static void atmel_spi_cs_deactivate(struct udevice *dev)
 {
-#ifdef CONFIG_DM_GPIO
+#if CONFIG_IS_ENABLED(DM_GPIO)
 	struct udevice *bus = dev_get_parent(dev);
 	struct atmel_spi_priv *priv = dev_get_priv(bus);
 	struct dm_spi_slave_platdata *slave_plat = dev_get_parent_platdata(dev);
@@ -476,7 +468,7 @@ static int atmel_spi_probe(struct udevice *bus)
 
 	bus_plat->regs = (struct at91_spi *)devfdt_get_addr(bus);
 
-#ifdef CONFIG_DM_GPIO
+#if CONFIG_IS_ENABLED(DM_GPIO)
 	struct atmel_spi_priv *priv = dev_get_priv(bus);
 	int i;
 

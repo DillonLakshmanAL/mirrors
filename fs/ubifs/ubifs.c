@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * This file is part of UBIFS.
  *
@@ -8,15 +9,18 @@
  *
  * Authors: Artem Bityutskiy (Битюцкий Артём)
  *          Adrian Hunter
- *
- * SPDX-License-Identifier:	GPL-2.0
  */
 
 #include <common.h>
+#include <env.h>
+#include <gzip.h>
+#include <malloc.h>
 #include <memalign.h>
 #include "ubifs.h"
+#include <dm/devres.h>
 #include <u-boot/zlib.h>
 
+#include <linux/compat.h>
 #include <linux/err.h>
 #include <linux/lzo.h>
 
@@ -69,24 +73,6 @@ struct ubifs_compressor *ubifs_compressors[UBIFS_COMPR_TYPES_CNT];
 
 
 #ifdef __UBOOT__
-/* from mm/util.c */
-
-/**
- * kmemdup - duplicate region of memory
- *
- * @src: memory region to duplicate
- * @len: memory region length
- * @gfp: GFP mask to use
- */
-void *kmemdup(const void *src, size_t len, gfp_t gfp)
-{
-	void *p;
-
-	p = kmalloc(len, gfp);
-	if (p)
-		memcpy(p, src, len);
-	return p;
-}
 
 struct crypto_comp {
 	int compressor;
@@ -799,8 +785,6 @@ static int do_readpage(struct ubifs_info *c, struct inode *inode,
 
 				if (last_block_size)
 					dlen = last_block_size;
-				else if (ret)
-					dlen = UBIFS_BLOCK_SIZE;
 				else
 					dlen = le32_to_cpu(dn->size);
 

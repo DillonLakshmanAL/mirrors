@@ -9,10 +9,7 @@
  * This driver provides a SCSI interface to SATA.
  */
 #include <common.h>
-#include <blk.h>
-#include <log.h>
-#include <linux/bitops.h>
-#include <linux/delay.h>
+#include <cpu_func.h>
 
 #include <command.h>
 #include <dm.h>
@@ -1027,7 +1024,7 @@ void scsi_low_level_init(int busdevfunc)
 
 #ifndef CONFIG_SCSI_AHCI_PLAT
 # if defined(CONFIG_DM_PCI) || defined(CONFIG_DM_SCSI)
-int achi_init_one_dm(struct udevice *dev)
+int ahci_init_one_dm(struct udevice *dev)
 {
 	struct ahci_uc_priv *uc_priv = dev_get_uclass_priv(dev);
 
@@ -1036,7 +1033,7 @@ int achi_init_one_dm(struct udevice *dev)
 #endif
 #endif
 
-int achi_start_ports_dm(struct udevice *dev)
+int ahci_start_ports_dm(struct udevice *dev)
 {
 	struct ahci_uc_priv *uc_priv = dev_get_uclass_priv(dev);
 
@@ -1189,9 +1186,6 @@ int ahci_probe_scsi(struct udevice *ahci_dev, ulong base)
 	 */
 	uc_plat->max_id = max_t(unsigned long, uc_priv->n_ports,
 				uc_plat->max_id);
-	/* If port count is less than max_id, update max_id */
-	if (uc_priv->n_ports < uc_plat->max_id)
-		uc_plat->max_id = uc_priv->n_ports;
 
 	return 0;
 }

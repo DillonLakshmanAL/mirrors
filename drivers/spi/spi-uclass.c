@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2014 Google, Inc
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -51,28 +50,23 @@ int dm_spi_claim_bus(struct udevice *dev)
 	struct dm_spi_ops *ops = spi_get_ops(bus);
 	struct dm_spi_bus *spi = dev_get_uclass_priv(bus);
 	struct spi_slave *slave = dev_get_parent_priv(dev);
-	uint speed, mode;
+	int speed;
 
 	speed = slave->max_hz;
-	mode = slave->mode;
-
 	if (spi->max_hz) {
 		if (speed)
-			speed = min(speed, spi->max_hz);
+			speed = min(speed, (int)spi->max_hz);
 		else
 			speed = spi->max_hz;
 	}
 	if (!speed)
 		speed = SPI_DEFAULT_SPEED_HZ;
-
-	if (speed != spi->speed || mode != spi->mode) {
+	if (speed != slave->speed) {
 		int ret = spi_set_speed_mode(bus, speed, slave->mode);
 
 		if (ret)
 			return log_ret(ret);
-
-		spi->speed = speed;
-		spi->mode = mode;
+		slave->speed = speed;
 	}
 
 	return log_ret(ops->claim_bus ? ops->claim_bus(dev) : 0);
@@ -329,7 +323,6 @@ int spi_get_bus_and_cs(int busnum, int cs, int speed, int mode,
 {
 	struct udevice *bus, *dev;
 	struct dm_spi_slave_platdata *plat;
-	struct dm_spi_bus *bus_data;
 	struct spi_slave *slave;
 	bool created = false;
 	int ret;
@@ -387,13 +380,12 @@ int spi_get_bus_and_cs(int busnum, int cs, int speed, int mode,
 	}
 
 	slave = dev_get_parent_priv(dev);
-	bus_data = dev_get_uclass_priv(bus);
 
 	/*
 	 * In case the operation speed is not yet established by
 	 * dm_spi_claim_bus() ensure the bus is configured properly.
 	 */
-	if (!bus_data->speed) {
+	if (!slave->speed) {
 		ret = spi_claim_bus(slave);
 		if (ret)
 			goto err;
@@ -504,7 +496,7 @@ UCLASS_DRIVER(spi) = {
 	.id		= UCLASS_SPI,
 	.name		= "spi",
 	.flags		= DM_UC_FLAG_SEQ_ALIAS,
-#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
+#if !CONFIG_IS_ENABLED(OF_PLATDATA)
 	.post_bind	= dm_scan_fdt_dev,
 #endif
 	.post_probe	= spi_post_probe,

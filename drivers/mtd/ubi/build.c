@@ -1,8 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) International Business Machines Corp., 2006
  * Copyright (c) Nokia Corporation, 2007
- *
- * SPDX-License-Identifier:	GPL-2.0+
  *
  * Author: Artem Bityutskiy (Битюцкий Артём),
  *         Frank Haverkamp
@@ -18,6 +17,7 @@
  */
 
 #ifndef __UBOOT__
+#include <dm/devres.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/stringify.h>

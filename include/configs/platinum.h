@@ -1,7 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (C) 2014, Barco (www.barco.com)
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #ifndef __PLATINUM_CONFIG_H__
@@ -37,7 +36,6 @@
 
 /* Ethernet config */
 #define CONFIG_FEC_MXC
-#define CONFIG_MII
 #define IMX_FEC_BASE				ENET_BASE_ADDR
 
 /* USB config */
@@ -46,7 +44,6 @@
 #define CONFIG_MXC_USB_FLAGS			0
 
 /* Memory config */
-#define CONFIG_NR_DRAM_BANKS			1
 #define PHYS_SDRAM				MMDC0_ARB_BASE_ADDR
 #ifndef PHYS_SDRAM_SIZE
 #define PHYS_SDRAM_SIZE				(1024 << 20)
@@ -77,17 +74,10 @@
 /* DMA config, needed for GPMI/MXS NAND support */
 
 /* Environment in NAND */
-#define CONFIG_ENV_OFFSET		(16 << 20)
-#define CONFIG_ENV_SECT_SIZE		(128 << 10)
-#define CONFIG_ENV_SIZE			CONFIG_ENV_SECT_SIZE
-#define CONFIG_ENV_OFFSET_REDUND	(CONFIG_ENV_OFFSET + (512 << 10))
-#define CONFIG_ENV_SIZE_REDUND		CONFIG_ENV_SIZE
 
 #else /* CONFIG_CMD_NAND */
 
 /* Environment in MMC */
-#define CONFIG_ENV_SIZE			(8 << 10)
-#define CONFIG_ENV_OFFSET		(6 * 64 * 1024)
 #define CONFIG_SYS_MMC_ENV_DEV		0
 
 #endif /* CONFIG_CMD_NAND */
@@ -97,7 +87,6 @@
  */
 
 /* Board startup config */
-#define CONFIG_MISC_INIT_R
 
 #define CONFIG_SYS_MEMTEST_START		PHYS_SDRAM
 #define CONFIG_SYS_MEMTEST_END			(CONFIG_SYS_MEMTEST_START + \
@@ -106,21 +95,8 @@
 #define CONFIG_BOOTCOMMAND			"run bootubi_scr"
 
 /* Miscellaneous configurable options */
-#define CONFIG_PREBOOT
 
 /* MTD/UBI/UBIFS config */
-
-#if (CONFIG_SYS_NAND_MAX_CHIPS == 1)
-#define MTDIDS_DEFAULT		"nand0=gpmi-nand"
-#define MTDPARTS_DEFAULT	"mtdparts=gpmi-nand:14M(spl),2M(uboot)," \
-				"512k(env1),512k(env2),-(ubi)"
-#elif (CONFIG_SYS_NAND_MAX_CHIPS == 2)
-#define MTDIDS_DEFAULT		"nand0=gpmi-nand"
-#define MTDPARTS_DEFAULT	"mtdparts=gpmi-nand:14M(spl),2M(uboot)," \
-				"512k(env1),512k(env2),495M(ubi0)," \
-				"14M(res0),2M(res1)," \
-				"512k(res2),512k(res3),-(ubi1)"
-#endif
 
 /*
  * Environment configuration
@@ -149,8 +125,8 @@
 	"baudrate=115200\0"						\
 	"boot_scr=boot.uboot\0"						\
 	"boot_vol=0\0"							\
-	"mtdids="MTDIDS_DEFAULT"\0"					\
-	"mtdparts="MTDPARTS_DEFAULT"\0"					\
+	"mtdids="CONFIG_MTDIDS_DEFAULT"\0"					\
+	"mtdparts="CONFIG_MTDPARTS_DEFAULT"\0"					\
 	"mmcfs=ext2\0"							\
 	"mmcrootpart=1\0"						\
 	\

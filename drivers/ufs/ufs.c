@@ -7,19 +7,19 @@
  *
  * Copyright (C) 2019 Texas Instruments Incorporated - http://www.ti.com
  */
+
 #include <charset.h>
 #include <common.h>
 #include <dm.h>
-#include <log.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
 #include <dm/lists.h>
 #include <dm/device-internal.h>
 #include <malloc.h>
 #include <hexdump.h>
 #include <scsi.h>
-#include <asm/io.h>
-#include <asm/dma-mapping.h>
-#include <linux/bitops.h>
-#include <linux/delay.h>
+
+#include <linux/dma-mapping.h>
 
 #include "ufs.h"
 
@@ -771,7 +771,7 @@ static inline void ufshcd_prepare_utp_nop_upiu(struct ufs_hba *hba)
 
 	/* command descriptor fields */
 	ucd_req_ptr->header.dword_0 =
-			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, TASK_TAG);
+			UPIU_HEADER_DWORD(UPIU_TRANSACTION_NOP_OUT, 0, 0, 0x1f);
 	/* clear rest of the fields of basic header */
 	ucd_req_ptr->header.dword_1 = 0;
 	ucd_req_ptr->header.dword_2 = 0;
@@ -1872,7 +1872,7 @@ int ufshcd_probe(struct udevice *ufs_dev, struct ufs_hba_ops *hba_ops)
 	scsi_plat = dev_get_uclass_platdata(scsi_dev);
 	scsi_plat->max_id = UFSHCD_MAX_ID;
 	scsi_plat->max_lun = UFS_MAX_LUNS;
-	//scsi_plat->max_bytes_per_req = UFS_MAX_BYTES;
+	scsi_plat->max_bytes_per_req = UFS_MAX_BYTES;
 
 	hba->dev = ufs_dev;
 	hba->ops = hba_ops;

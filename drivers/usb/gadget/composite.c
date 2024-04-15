@@ -1,13 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * composite.c - infrastructure for Composite USB Gadgets
  *
  * Copyright (C) 2006-2008 David Brownell
  * U-Boot porting: Lukasz Majewski <l.majewski@samsung.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 #undef DEBUG
 
+#include <dm/devres.h>
 #include <linux/bitops.h>
 #include <linux/usb/composite.h>
 
@@ -65,8 +65,6 @@ int usb_add_function(struct usb_configuration *config,
 		config->fullspeed = 1;
 	if (!config->highspeed && function->hs_descriptors)
 		config->highspeed = 1;
-	if (!config->superspeed && function->ss_descriptors)
-		config->superspeed = 1;
 
 done:
 	if (value)
@@ -202,17 +200,10 @@ static int config_buf(struct usb_configuration *config,
 
 	/* add each function's descriptors */
 	list_for_each_entry(f, &config->functions, list) {
-		switch (speed) {
-		case USB_SPEED_SUPER:
-			descriptors = f->ss_descriptors;
-			break;
-		case USB_SPEED_HIGH:
+		if (speed == USB_SPEED_HIGH)
 			descriptors = f->hs_descriptors;
-			break;
-		default:
+		else
 			descriptors = f->descriptors;
-		}
-
 		if (!descriptors)
 			continue;
 		status = usb_descriptor_fillbuf(next, len,
@@ -236,9 +227,7 @@ static int config_desc(struct usb_composite_dev *cdev, unsigned w_value)
 	int                             hs = 0;
 	struct usb_configuration	*c;
 
-	if (gadget->speed == USB_SPEED_SUPER)
-		speed = gadget->speed;
-	else if (gadget_is_dualspeed(gadget)) {
+	if (gadget_is_dualspeed(gadget)) {
 		if (gadget->speed == USB_SPEED_HIGH)
 			hs = 1;
 		if (type == USB_DT_OTHER_SPEED_CONFIG)
@@ -249,20 +238,13 @@ static int config_desc(struct usb_composite_dev *cdev, unsigned w_value)
 
 	w_value &= 0xff;
 	list_for_each_entry(c, &cdev->configs, list) {
-		switch (speed) {
-		case USB_SPEED_SUPER:
-			if (!c->superspeed)
-				continue;
-			break;
-		case USB_SPEED_HIGH:
+		if (speed == USB_SPEED_HIGH) {
 			if (!c->highspeed)
 				continue;
-			break;
-		default:
+		} else {
 			if (!c->fullspeed)
 				continue;
 		}
-
 		if (w_value == 0)
 			return config_buf(c, speed, cdev->req->buf, type);
 		w_value--;
@@ -358,24 +340,21 @@ static int set_config(struct usb_composite_dev *cdev,
 		result = 0;
 
 	debug("%s: %s speed config #%d: %s\n", __func__,
-	      ({ char *speed;
-		switch (gadget->speed) {
-		case USB_SPEED_LOW:
-			speed = "low";
-			break;
-		case USB_SPEED_FULL:
-			speed = "full";
-			break;
-		case USB_SPEED_HIGH:
-			speed = "high";
-			break;
-		case USB_SPEED_SUPER:
-			speed = "super";
-			break;
-		default:
-			speed = "?";
-			break;
-		};
+	     ({ char *speed;
+		     switch (gadget->speed) {
+		     case USB_SPEED_LOW:
+			     speed = "low";
+			     break;
+		     case USB_SPEED_FULL:
+			     speed = "full";
+			     break;
+		     case USB_SPEED_HIGH:
+			     speed = "high";
+			     break;
+		     default:
+			     speed = "?";
+			     break;
+		     };
 		     speed;
 	     }), number, c ? c->label : "unconfigured");
 
@@ -396,16 +375,10 @@ static int set_config(struct usb_composite_dev *cdev,
 		 * function's setup callback instead of the current
 		 * configuration's setup callback.
 		 */
-		switch (gadget->speed) {
-		case USB_SPEED_SUPER:
-			descriptors = f->ss_descriptors;
-			break;
-		case USB_SPEED_HIGH:
+		if (gadget->speed == USB_SPEED_HIGH)
 			descriptors = f->hs_descriptors;
-			break;
-		default:
+		else
 			descriptors = f->descriptors;
-		}
 
 		for (; *descriptors; ++descriptors) {
 			if ((*descriptors)->bDescriptorType != USB_DT_ENDPOINT)
@@ -482,13 +455,14 @@ int usb_add_config(struct usb_composite_dev *cdev,
 		list_del(&config->list);
 		config->cdev = NULL;
 	} else {
-		debug("cfg %d/%p speeds:%s%s%s\n",
-		      config->bConfigurationValue, config,
-		      config->superspeed ? " super" : "",
-		      config->highspeed ? " high" : "",
-		      config->fullspeed ?
-		      (gadget_is_dualspeed(cdev->gadget) ?
-		      " full" : " full/low") : "");
+		debug("cfg %d/%p speeds:%s%s\n",
+			config->bConfigurationValue, config,
+			config->highspeed ? " high" : "",
+			config->fullspeed
+				? (gadget_is_dualspeed(cdev->gadget)
+					? " full"
+					: " full/low")
+				: "");
 
 		for (i = 0; i < MAX_CONFIG_INTERFACES; i++) {
 			f = config->interface[i];
@@ -726,44 +700,36 @@ static void composite_setup_complete(struct usb_ep *ep, struct usb_request *req)
 
 static int bos_desc(struct usb_composite_dev *cdev)
 {
-	struct usb_dev_cap_header	*cap;
-	struct usb_ext_cap_descriptor	*usb_ext;
-	struct usb_ss_cap_descriptor	*ss_cap;
-	struct usb_bos_descriptor	*bos = cdev->req->buf;
+	struct usb_ext_cap_descriptor   *usb_ext;
+	struct usb_bos_descriptor       *bos = cdev->req->buf;
 
 	bos->bLength = USB_DT_BOS_SIZE;
 	bos->bDescriptorType = USB_DT_BOS;
+
 	bos->wTotalLength = cpu_to_le16(USB_DT_BOS_SIZE);
 	bos->bNumDeviceCaps = 0;
 
-	if (cdev->gadget->speed < USB_SPEED_SUPER) {
-		/* For rockusb with bcdUSB (0x0201) */
-		cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
-		bos->bNumDeviceCaps++;
-		bos->wTotalLength = cpu_to_le16(bos->wTotalLength +
-						sizeof(*cap));
-		cap->bLength = sizeof(*cap);
-		cap->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
-		cap->bDevCapabilityType = 0;
-	} else {
-		/*
-		 * A SuperSpeed device shall include the USB2.0
-		 * extension descriptor and shall support LPM when
-		 * operating in USB2.0 HS mode.
-		 */
-		usb_ext = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
-		bos->bNumDeviceCaps++;
-		le16_add_cpu_packed((__le16_packed *)&bos->wTotalLength,
-				    USB_DT_USB_EXT_CAP_SIZE);
-		usb_ext->bLength = USB_DT_USB_EXT_CAP_SIZE;
-		usb_ext->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
-		usb_ext->bDevCapabilityType = USB_CAP_TYPE_EXT;
-		usb_ext->bmAttributes = USB_LPM_SUPPORT;
+	/*
+	 * A SuperSpeed device shall include the USB2.0 extension descriptor
+	 * and shall support LPM when operating in USB2.0 HS mode.
+	 */
+	usb_ext = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
+	bos->bNumDeviceCaps++;
+	le16_add_cpu_packed((__le16_packed *)&bos->wTotalLength,
+			    USB_DT_USB_EXT_CAP_SIZE);
+	usb_ext->bLength = USB_DT_USB_EXT_CAP_SIZE;
+	usb_ext->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
+	usb_ext->bDevCapabilityType = USB_CAP_TYPE_EXT;
+	usb_ext->bmAttributes =
+		cpu_to_le32(USB_LPM_SUPPORT | USB_BESL_SUPPORT);
 
-		/*
-		 * The Superspeed USB Capability descriptor shall be
-		 * implemented by all SuperSpeed devices.
-		 */
+	/*
+	 * The Superspeed USB Capability descriptor shall be implemented
+	 * by all SuperSpeed devices.
+	 */
+	if (gadget_is_superspeed(cdev->gadget)) {
+		struct usb_ss_cap_descriptor *ss_cap;
+
 		ss_cap = cdev->req->buf + le16_to_cpu(bos->wTotalLength);
 		bos->bNumDeviceCaps++;
 		le16_add_cpu_packed((__le16_packed *)&bos->wTotalLength,
@@ -772,14 +738,16 @@ static int bos_desc(struct usb_composite_dev *cdev)
 		ss_cap->bDescriptorType = USB_DT_DEVICE_CAPABILITY;
 		ss_cap->bDevCapabilityType = USB_SS_CAP_TYPE;
 		ss_cap->bmAttributes = 0; /* LTM is not supported yet */
-		ss_cap->wSpeedSupported = cpu_to_le16(USB_FULL_SPEED_OPERATION |
-				USB_HIGH_SPEED_OPERATION |
-				USB_5GBPS_OPERATION);
-		ss_cap->bFunctionalitySupport = USB_FULL_SPEED_OPERATION;
+		ss_cap->wSpeedSupported =
+			cpu_to_le16(USB_LOW_SPEED_OPERATION |
+				    USB_FULL_SPEED_OPERATION |
+				    USB_HIGH_SPEED_OPERATION |
+				    USB_5GBPS_OPERATION);
+		ss_cap->bFunctionalitySupport = USB_LOW_SPEED_OPERATION;
 		ss_cap->bU1devExitLat = USB_DEFAULT_U1_DEV_EXIT_LAT;
-		ss_cap->bU2DevExitLat = cpu_to_le16(USB_DEFAULT_U2_DEV_EXIT_LAT);
+		ss_cap->bU2DevExitLat =
+			cpu_to_le16(USB_DEFAULT_U2_DEV_EXIT_LAT);
 	}
-
 	return le16_to_cpu(bos->wTotalLength);
 }
 
@@ -816,7 +784,6 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 	gadget->ep0->driver_data = cdev;
 	standard = (ctrl->bRequestType & USB_TYPE_MASK)
 						== USB_TYPE_STANDARD;
-
 	if (!standard)
 		goto unknown;
 
@@ -832,23 +799,20 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 			cdev->desc.bNumConfigurations =
 				count_configs(cdev, USB_DT_DEVICE);
 
-			if (gadget_is_superspeed(gadget) &&
-			    gadget->speed >= USB_SPEED_SUPER) {
-				/*
-				 * bcdUSB should be 0x0300 for superspeed,
-				 * but we change it to 0x0301 for rockusb.
-				 */
-				if (!strncmp(cdev->driver->name,
-					     "rkusb_ums_dnl", 13))
-					cdev->desc.bcdUSB = cpu_to_le16(0x0301);
-				else
-					cdev->desc.bcdUSB = cpu_to_le16(0x0300);
+			/*
+			 * If the speed is Super speed, then the supported
+			 * max packet size is 512 and it should be sent as
+			 * exponent of 2. So, 9(2^9=512) should be filled in
+			 * bMaxPacketSize0. Also fill USB version as 3.0
+			 * if speed is Super speed.
+			 */
+			if (cdev->gadget->speed == USB_SPEED_SUPER) {
 				cdev->desc.bMaxPacketSize0 = 9;
+				cdev->desc.bcdUSB = cpu_to_le16(0x0300);
 			} else {
 				cdev->desc.bMaxPacketSize0 =
 					cdev->gadget->ep0->maxpacket;
 			}
-
 			value = min(w_length, (u16) sizeof cdev->desc);
 			memcpy(req->buf, &cdev->desc, value);
 			break;
@@ -875,25 +839,10 @@ composite_setup(struct usb_gadget *gadget, const struct usb_ctrlrequest *ctrl)
 				value = min(w_length, (u16) value);
 			break;
 		case USB_DT_BOS:
-			/* HACK: only for rockusb command.
-			 * Rockchip upgrade tool use bcdUSB (0x0201) field
-			 * distinguishing maskrom or loader device at present.
-			 * Unfortunately, it conflict with Windows 8 and beyond
-			 * which request BOS descriptor in this case that bcdUSB
-			 * is set to 0x0201.
-			 */
-			if (gadget_is_superspeed(gadget) ||
-			    !strncmp(cdev->driver->name, "rkusb_ums_dnl", 13)) {
+			if (gadget_is_superspeed(cdev->gadget))
 				value = bos_desc(cdev);
-				value = min(w_length, (u16) value);
-			}
-
-			/*
-			 * The USB compliance test (USB 2.0 Command Verifier)
-			 * issues this request. We should not run into the
-			 * default path here. But return for now until
-			 * the superspeed support is added.
-			 */
+			if (value >= 0)
+				value = min(w_length, (u16)value);
 			break;
 		default:
 			goto unknown;
@@ -972,14 +921,10 @@ unknown:
 		 */
 		switch (ctrl->bRequestType & USB_RECIP_MASK) {
 		case USB_RECIP_INTERFACE:
-			if (!cdev->config)
-				break;
 			f = cdev->config->interface[intf];
 			break;
 
 		case USB_RECIP_ENDPOINT:
-			if (!cdev->config)
-				break;
 			endp = ((w_index & 0x80) >> 3) | (w_index & 0x0f);
 			list_for_each_entry(f, &cdev->config->functions, list) {
 				if (test_bit(endp, f->endpoints))
@@ -1002,12 +947,10 @@ unknown:
 		 * special non-standard request.
 		 */
 		case USB_RECIP_DEVICE:
-			if (cdev->config) {
-				debug("cdev->config->next_interface_id: %d intf: %d\n",
-				      cdev->config->next_interface_id, intf);
-				if (cdev->config->next_interface_id == 1)
-					f = cdev->config->interface[intf];
-			}
+			debug("cdev->config->next_interface_id: %d intf: %d\n",
+			       cdev->config->next_interface_id, intf);
+			if (cdev->config->next_interface_id == 1)
+				f = cdev->config->interface[intf];
 			break;
 		}
 
@@ -1061,7 +1004,11 @@ static void composite_unbind(struct usb_gadget *gadget)
 	 * so there's no i/o concurrency that could affect the
 	 * state protected by cdev->lock.
 	 */
+#ifdef __UBOOT__
+	assert_noisy(!cdev->config);
+#else
 	BUG_ON(cdev->config);
+#endif
 
 	while (!list_empty(&cdev->configs)) {
 		c = list_first_entry(&cdev->configs,

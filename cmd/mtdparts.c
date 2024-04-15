@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2002
  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
@@ -20,8 +21,6 @@
  *
  *   $Id: cmdlinepart.c,v 1.17 2004/11/26 11:18:47 lavinen Exp $
  *   Copyright 2002 SYSGO Real-Time Solutions GmbH
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 /*
@@ -45,7 +44,7 @@
  *
  * 'mtdparts' - partition list
  *
- * mtdparts=mtdparts=<mtd-def>[;<mtd-def>...]
+ * mtdparts=[mtdparts=]<mtd-def>[;<mtd-def>...]
  *
  * <mtd-def>  := <mtd-id>:<part-def>[,<part-def>...]
  * <mtd-id>   := unique device tag used by linux kernel to find mtd device (mtd->name)
@@ -63,16 +62,17 @@
  *
  * 1 NOR Flash, with 1 single writable partition:
  * mtdids=nor0=edb7312-nor
- * mtdparts=mtdparts=edb7312-nor:-
+ * mtdparts=[mtdparts=]edb7312-nor:-
  *
  * 1 NOR Flash with 2 partitions, 1 NAND with one
  * mtdids=nor0=edb7312-nor,nand0=edb7312-nand
- * mtdparts=mtdparts=edb7312-nor:256k(ARMboot)ro,-(root);edb7312-nand:-(home)
+ * mtdparts=[mtdparts=]edb7312-nor:256k(ARMboot)ro,-(root);edb7312-nand:-(home)
  *
  */
 
 #include <common.h>
 #include <command.h>
+#include <env.h>
 #include <malloc.h>
 #include <jffs2/load_kernel.h>
 #include <linux/list.h>
@@ -1100,9 +1100,6 @@ static int generate_mtdparts(char *buf, u32 buflen)
 		return 0;
 	}
 
-	strcpy(p, "mtdparts=");
-	p += 9;
-
 	list_for_each(dentry, &devices) {
 		dev = list_entry(dentry, struct mtd_device, link);
 
@@ -1236,11 +1233,11 @@ static uint64_t net_part_size(struct mtd_info *mtd, struct part_info *part)
 {
 	uint64_t i, net_size = 0;
 
-	if (!mtd->block_isbad)
+	if (!mtd->_block_isbad)
 		return part->size;
 
 	for (i = 0; i < part->size; i += mtd->erasesize) {
-		if (!mtd->block_isbad(mtd, part->offset + i))
+		if (!mtd->_block_isbad(mtd, part->offset + i))
 			net_size += mtd->erasesize;
 	}
 
@@ -1277,7 +1274,7 @@ static void print_partition_table(void)
 			part = list_entry(pentry, struct part_info, link);
 			net_size = net_part_size(mtd, part);
 			size_note = part->size == net_size ? " " : " (!)";
-			printf("%2d: %-20s0x%08x\t0x%08x%s\t0x%08x\t%d\n",
+			printf("%2d: %-20s0x%08llx\t0x%08x%s\t0x%08llx\t%d\n",
 					part_num, part->name, part->size,
 					net_size, size_note, part->offset,
 					part->mask_flags);
@@ -1573,11 +1570,9 @@ static int parse_mtdparts(const char *const mtdparts)
 	if (!p)
 		p = mtdparts;
 
-	if (strncmp(p, "mtdparts=", 9) != 0) {
-		printf("mtdparts variable doesn't start with 'mtdparts='\n");
-		return err;
-	}
-	p += 9;
+	/* Skip the useless prefix, if any */
+	if (strncmp(p, "mtdparts=", 9) == 0)
+		p += 9;
 
 	while (*p != '\0') {
 		err = 1;

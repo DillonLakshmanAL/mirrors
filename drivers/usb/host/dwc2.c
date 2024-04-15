@@ -1,11 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2012 Oleksandr Tymoshenko <gonzo@freebsd.org>
  * Copyright (C) 2014 Marek Vasut <marex@denx.de>
- *
- * SPDX-License-Identifier:     GPL-2.0+
  */
 
 #include <common.h>
+#include <cpu_func.h>
 #include <dm.h>
 #include <errno.h>
 #include <usb.h>
@@ -15,12 +15,11 @@
 #include <usbroothubdes.h>
 #include <wait_bit.h>
 #include <asm/io.h>
+#include <dm/device_compat.h>
 #include <power/regulator.h>
 #include <reset.h>
 
 #include "dwc2.h"
-
-DECLARE_GLOBAL_DATA_PTR;
 
 /* Use only HC channel 0. */
 #define DWC2_HC_CHANNEL			0
@@ -1329,10 +1328,6 @@ static int dwc2_usb_probe(struct udevice *dev)
 	struct usb_bus_priv *bus_priv = dev_get_uclass_priv(dev);
 
 	bus_priv->desc_before_addr = true;
-
-#ifdef CONFIG_ARCH_ROCKCHIP
-	priv->hnp_srp_disable = true;
-#endif
 
 	return dwc2_init_common(dev, priv);
 }

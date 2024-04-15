@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2013 Google, Inc
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -221,7 +220,7 @@ int gpio_hog_probe_all(void)
 	int ret;
 	int retval = 0;
 
-	for (uclass_find_first_device(UCLASS_NOP, &dev);
+	for (uclass_first_device(UCLASS_NOP, &dev);
 	     dev;
 	     uclass_find_next_device(&dev)) {
 		if (dev->driver == DM_GET_DRIVER(gpio_hog)) {
@@ -295,7 +294,7 @@ int dm_gpio_request(struct gpio_desc *desc, const char *label)
 
 static int dm_gpio_requestf(struct gpio_desc *desc, const char *fmt, ...)
 {
-#if !defined(CONFIG_SPL_BUILD) || !defined(CONFIG_USE_TINY_PRINTF)
+#if !defined(CONFIG_SPL_BUILD) || !CONFIG_IS_ENABLED(USE_TINY_PRINTF)
 	va_list args;
 	char buf[40];
 
@@ -344,7 +343,7 @@ int gpio_request(unsigned gpio, const char *label)
  */
 int gpio_requestf(unsigned gpio, const char *fmt, ...)
 {
-#if !defined(CONFIG_SPL_BUILD) || !defined(CONFIG_USE_TINY_PRINTF)
+#if !defined(CONFIG_SPL_BUILD) || !CONFIG_IS_ENABLED(USE_TINY_PRINTF)
 	va_list args;
 	char buf[40];
 
@@ -365,8 +364,8 @@ int _dm_gpio_free(struct udevice *dev, uint offset)
 	uc_priv = dev_get_uclass_priv(dev);
 	if (!uc_priv->name[offset])
 		return -ENXIO;
-	if (gpio_get_ops(dev)->free) {
-		ret = gpio_get_ops(dev)->free(dev, offset);
+	if (gpio_get_ops(dev)->rfree) {
+		ret = gpio_get_ops(dev)->rfree(dev, offset);
 		if (ret)
 			return ret;
 	}
@@ -1037,6 +1036,36 @@ static int gpio_post_bind(struct udevice *dev)
 	struct udevice *child;
 	ofnode node;
 
+#if defined(CONFIG_NEEDS_MANUAL_RELOC)
+	struct dm_gpio_ops *ops = (struct dm_gpio_ops *)device_get_ops(dev);
+	static int reloc_done;
+
+	if (!reloc_done) {
+		if (ops->request)
+			ops->request += gd->reloc_off;
+		if (ops->rfree)
+			ops->rfree += gd->reloc_off;
+		if (ops->direction_input)
+			ops->direction_input += gd->reloc_off;
+		if (ops->direction_output)
+			ops->direction_output += gd->reloc_off;
+		if (ops->get_value)
+			ops->get_value += gd->reloc_off;
+		if (ops->set_value)
+			ops->set_value += gd->reloc_off;
+		if (ops->get_open_drain)
+			ops->get_open_drain += gd->reloc_off;
+		if (ops->set_open_drain)
+			ops->set_open_drain += gd->reloc_off;
+		if (ops->get_function)
+			ops->get_function += gd->reloc_off;
+		if (ops->xlate)
+			ops->xlate += gd->reloc_off;
+
+		reloc_done++;
+	}
+#endif
+
 	if (IS_ENABLED(CONFIG_GPIO_HOG)) {
 		dev_for_each_subnode(node, dev) {
 			if (ofnode_read_bool(node, "gpio-hog")) {
@@ -1058,9 +1087,7 @@ static int gpio_post_bind(struct udevice *dev)
 UCLASS_DRIVER(gpio) = {
 	.id		= UCLASS_GPIO,
 	.name		= "gpio",
-#ifndef CONFIG_GPIO_NO_UC_FLAG_SEQ_ALIAS
 	.flags		= DM_UC_FLAG_SEQ_ALIAS,
-#endif
 	.post_probe	= gpio_post_probe,
 	.post_bind	= gpio_post_bind,
 	.pre_remove	= gpio_pre_remove,

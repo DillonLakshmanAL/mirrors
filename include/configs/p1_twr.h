@@ -1,7 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright 2013 Freescale Semiconductor, Inc.
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 /*
@@ -13,7 +12,6 @@
 #if defined(CONFIG_TWR_P1025)
 #define CONFIG_BOARDNAME "TWR-P1025"
 #define CONFIG_PHY_ATHEROS
-#define CONFIG_QE
 #define CONFIG_SYS_LBC_LBCR	0x00080000	/* Conversion of LBC addr */
 #define CONFIG_SYS_LBC_LCRR	0x80000002	/* LB clock ratio reg */
 #endif
@@ -21,13 +19,7 @@
 #ifdef CONFIG_SDCARD
 #define CONFIG_RAMBOOT_SDCARD
 #define CONFIG_SYS_RAMBOOT
-#define CONFIG_SYS_EXTRA_ENV_RELOC
-#define CONFIG_SYS_TEXT_BASE		0x11000000
 #define CONFIG_RESET_VECTOR_ADDRESS	0x110bfffc
-#endif
-
-#ifndef CONFIG_SYS_TEXT_BASE
-#define CONFIG_SYS_TEXT_BASE		0xeff40000
 #endif
 
 #ifndef CONFIG_RESET_VECTOR_ADDRESS
@@ -38,21 +30,15 @@
 #define CONFIG_SYS_MONITOR_BASE	CONFIG_SYS_TEXT_BASE	/* start of monitor */
 #endif
 
-#define CONFIG_MP
-
 #define CONFIG_PCIE1	/* PCIE controller 1 (slot 1) */
 #define CONFIG_PCIE2	/* PCIE controller 2 (slot 2) */
 #define CONFIG_FSL_PCI_INIT	/* Use common FSL init code */
 #define CONFIG_PCI_INDIRECT_BRIDGE	/* indirect PCI bridge support */
-#define CONFIG_FSL_PCIE_RESET	/* need PCIe reset errata */
 #define CONFIG_SYS_PCI_64BIT	/* enable 64-bit PCI resources */
 
-#define CONFIG_TSEC_ENET	/* tsec ethernet support */
 #define CONFIG_ENV_OVERWRITE
 
-#define CONFIG_SATA_SIL3114
 #define CONFIG_SYS_SATA_MAX_DEVICE	2
-#define CONFIG_LIBATA
 #define CONFIG_LBA48
 
 #ifndef __ASSEMBLY__
@@ -168,12 +154,7 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 #define CONFIG_SYS_FLASH_ERASE_TOUT	60000	/* Flash Erase Timeout (ms) */
 #define CONFIG_SYS_FLASH_WRITE_TOUT	500	/* Flash Write Timeout (ms) */
 
-#define CONFIG_FLASH_CFI_DRIVER
-#define CONFIG_SYS_FLASH_CFI
 #define CONFIG_SYS_FLASH_EMPTY_INFO
-#define CONFIG_SYS_FLASH_USE_BUFFER_WRITE
-
-#define CONFIG_BOARD_EARLY_INIT_R	/* call board_early_init_r function */
 
 #define CONFIG_SYS_INIT_RAM_LOCK
 #define CONFIG_SYS_INIT_RAM_ADDR	0xffd00000
@@ -198,7 +179,6 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
  * open - index 2
  * shorted - index 1
  */
-#define CONFIG_CONS_INDEX		1
 #undef CONFIG_SERIAL_SOFTWARE_FIFO
 #define CONFIG_SYS_NS16550_SERIAL
 #define CONFIG_SYS_NS16550_REG_SIZE	1
@@ -231,11 +211,6 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 #define CONFIG_SYS_I2C_EEPROM_ADDR_LEN 1
 #define CONFIG_SYS_EEPROM_PAGE_WRITE_BITS 3
 #define CONFIG_SYS_EEPROM_PAGE_WRITE_DELAY_MS 5
-
-/*
- * eSPI - Enhanced SPI
- */
-#define CONFIG_HARD_SPI
 
 #if defined(CONFIG_PCI)
 /*
@@ -270,7 +245,6 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 
 #if defined(CONFIG_TSEC_ENET)
 
-#define CONFIG_MII		/* MII PHY management */
 #define CONFIG_TSEC1
 #define CONFIG_TSEC1_NAME	"eTSEC1"
 #undef CONFIG_TSEC2
@@ -299,7 +273,6 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 
 #ifdef CONFIG_QE
 /* QE microcode/firmware address */
-#define CONFIG_SYS_QE_FMAN_FW_IN_NOR
 #define CONFIG_SYS_QE_FW_ADDR	0xefec0000
 #define CONFIG_SYS_QE_FMAN_FW_LENGTH	0x10000
 #endif /* CONFIG_QE */
@@ -343,27 +316,14 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 /*
  * Dynamic MTD Partition support with mtdparts
  */
-#define CONFIG_FLASH_CFI_MTD
-#define MTDIDS_DEFAULT "nor0=ec000000.nor"
-#define MTDPARTS_DEFAULT "mtdparts=ec000000.nor:256k(vsc7385-firmware)," \
-			"256k(dtb),5632k(kernel),57856k(fs)," \
-			"256k(qe-ucode-firmware),1280k(u-boot)"
 
 /*
  * Environment
  */
 #ifdef CONFIG_SYS_RAMBOOT
 #ifdef CONFIG_RAMBOOT_SDCARD
-#define CONFIG_ENV_SIZE		0x2000
 #define CONFIG_SYS_MMC_ENV_DEV	0
-#else
-#define CONFIG_ENV_ADDR		(CONFIG_SYS_MONITOR_BASE - 0x1000)
-#define CONFIG_ENV_SIZE		0x2000
 #endif
-#else
-#define CONFIG_ENV_ADDR	(CONFIG_SYS_MONITOR_BASE - CONFIG_ENV_SECT_SIZE)
-#define CONFIG_ENV_SIZE		0x2000
-#define CONFIG_ENV_SECT_SIZE	0x20000 /* 128K (one sector) */
 #endif
 
 #define CONFIG_LOADS_ECHO		/* echo on for serial download */
@@ -382,7 +342,6 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 #endif
 
 #ifdef CONFIG_MMC
-#define CONFIG_FSL_ESDHC
 #define CONFIG_SYS_FSL_ESDHC_ADDR	CONFIG_SYS_MPC85xx_ESDHC_ADDR
 #endif
 
@@ -391,8 +350,6 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 /*
  * Miscellaneous configurable options
  */
-#define CONFIG_SYS_LONGHELP			/* undef to save memory */
-#define CONFIG_CMDLINE_EDITING			/* Command-line editing */
 #define CONFIG_SYS_LOAD_ADDR	0x2000000	/* default load address */
 
 /*
@@ -406,7 +363,7 @@ extern unsigned long get_board_sys_clk(unsigned long dummy);
 /*
  * Environment Configuration
  */
-#define CONFIG_HOSTNAME		unknown
+#define CONFIG_HOSTNAME		"unknown"
 #define CONFIG_ROOTPATH		"/opt/nfsroot"
 #define CONFIG_BOOTFILE		"uImage"
 #define CONFIG_UBOOTPATH	u-boot.bin /* U-Boot image on TFTP server */

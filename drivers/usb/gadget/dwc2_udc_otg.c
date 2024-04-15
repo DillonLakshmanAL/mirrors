@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * drivers/usb/gadget/dwc2_udc_otg.c
  * Designware DWC2 on-chip full/high speed USB OTG 2.0 device controllers
@@ -14,8 +15,6 @@
  * Ported to u-boot:
  * Marek Szyprowski <m.szyprowski@samsung.com>
  * Lukasz Majewski <l.majewski@samsumg.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 #undef DEBUG
 #include <common.h>
@@ -24,6 +23,8 @@
 #include <generic-phy.h>
 #include <malloc.h>
 #include <reset.h>
+#include <dm/device_compat.h>
+#include <dm/devres.h>
 
 #include <linux/errno.h>
 #include <linux/list.h>
@@ -32,6 +33,7 @@
 #include <linux/usb/otg.h>
 #include <linux/usb/gadget.h>
 
+#include <phys2bus.h>
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 #include <asm/io.h>
@@ -175,7 +177,6 @@ static void udc_disable(struct dwc2_udc *dev)
 	dev->ep0state = WAIT_FOR_SETUP;
 	dev->gadget.speed = USB_SPEED_UNKNOWN;
 	dev->usb_address = 0;
-	dev->connected = 0;
 
 	otg_phy_off(dev);
 }
@@ -1038,12 +1039,13 @@ void dwc2_phy_shutdown(struct udevice *dev, struct phy *usb_phys, int num_phys)
 static int dwc2_udc_otg_ofdata_to_platdata(struct udevice *dev)
 {
 	struct dwc2_plat_otg_data *platdata = dev_get_platdata(dev);
+	int node = dev_of_offset(dev);
 	ulong drvdata;
 	void (*set_params)(struct dwc2_plat_otg_data *data);
 	int ret;
 
-	if (usb_get_dr_mode(dev->node) != USB_DR_MODE_PERIPHERAL &&
-	    usb_get_dr_mode(dev->node) != USB_DR_MODE_OTG) {
+	if (usb_get_dr_mode(node) != USB_DR_MODE_PERIPHERAL &&
+	    usb_get_dr_mode(node) != USB_DR_MODE_OTG) {
 		dev_dbg(dev, "Invalid mode\n");
 		return -ENODEV;
 	}
@@ -1214,6 +1216,7 @@ static int dwc2_udc_otg_remove(struct udevice *dev)
 
 static const struct udevice_id dwc2_udc_otg_ids[] = {
 	{ .compatible = "snps,dwc2" },
+	{ .compatible = "brcm,bcm2835-usb" },
 	{ .compatible = "st,stm32mp1-hsotg",
 	  .data = (ulong)dwc2_set_stm32mp1_hsotg_params },
 	{},

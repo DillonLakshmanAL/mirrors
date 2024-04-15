@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * crt0 - C-runtime startup Code for AArch64 U-Boot
  *
@@ -6,14 +7,11 @@
  *
  * (C) Copyright 2012
  * Albert ARIBAUD <albert.u.boot@aribaud.net>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <config.h>
 #include <asm-offsets.h>
 #include <asm/macro.h>
-#include <asm/system.h>
 #include <linux/linkage.h>
 
 /*
@@ -74,6 +72,9 @@ ENTRY(_main)
 	ldr	x0, =(CONFIG_TPL_STACK)
 #elif defined(CONFIG_SPL_BUILD) && defined(CONFIG_SPL_STACK)
 	ldr	x0, =(CONFIG_SPL_STACK)
+#elif defined(CONFIG_INIT_SP_RELATIVE)
+	adr	x0, __bss_start
+	add	x0, x0, #CONFIG_SYS_INIT_SP_BSS_OFFSET
 #else
 	ldr	x0, =(CONFIG_SYS_INIT_SP_ADDR)
 #endif
@@ -84,12 +85,11 @@ ENTRY(_main)
 	/* set up gd here, outside any C code */
 	mov	x18, x0
 	bl	board_init_f_init_reserve
-	bl	board_init_f_boot_flags
 
+	mov	x0, #0
 	bl	board_init_f
 
-#if (defined(CONFIG_SPL_BUILD) && !defined(CONFIG_TPL_BUILD) && !defined(CONFIG_SPL_SKIP_RELOCATE)) || \
-	!defined(CONFIG_SPL_BUILD)
+#if !defined(CONFIG_SPL_BUILD)
 /*
  * Set up intermediate environment (new sp and gd) and call
  * relocate_code(addr_moni). Trick here is that we'll return
@@ -99,7 +99,6 @@ ENTRY(_main)
 	bic	sp, x0, #0xf	/* 16-byte alignment for ABI compliance */
 	ldr	x18, [x18, #GD_NEW_GD]		/* x18 <- gd->new_gd */
 
-#ifndef CONFIG_SKIP_RELOCATE_UBOOT
 	adr	lr, relocation_return
 #if CONFIG_POSITION_INDEPENDENT
 	/* Add in link-vs-runtime offset */
@@ -113,7 +112,6 @@ ENTRY(_main)
 	add	lr, lr, x9	/* new return address after relocation */
 	ldr	x0, [x18, #GD_RELOCADDR]	/* x0 <- gd->relocaddr */
 	b	relocate_code
-#endif
 
 relocation_return:
 
@@ -122,6 +120,7 @@ relocation_return:
  */
 	bl	c_runtime_cpu_setup		/* still call old routine */
 #endif /* !CONFIG_SPL_BUILD */
+#if !defined(CONFIG_SPL_BUILD) || CONFIG_IS_ENABLED(FRAMEWORK)
 #if defined(CONFIG_SPL_BUILD)
 	bl	spl_relocate_stack_gd           /* may return NULL */
 	/* set up gd here, outside any C code, if new stack is returned */
@@ -154,5 +153,6 @@ clear_loop:
 	b	board_init_r			/* PC relative jump */
 
 	/* NOTREACHED - board_init_r() does not return */
+#endif
 
 ENDPROC(_main)

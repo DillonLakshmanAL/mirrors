@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * f_dfu.c -- Device Firmware Update USB function
  *
@@ -11,10 +12,9 @@
  *
  * based on existing SAM7DFU code from OpenPCD:
  * (C) Copyright 2006 by Harald Welte <hwelte at hmw-consulting.de>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
+#include <env.h>
 #include <errno.h>
 #include <common.h>
 #include <malloc.h>
@@ -595,6 +595,11 @@ dfu_handle(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	debug("w_value: 0x%x len: 0x%x\n", w_value, len);
 	debug("req_type: 0x%x ctrl->bRequest: 0x%x f_dfu->dfu_state: 0x%x\n",
 	       req_type, ctrl->bRequest, f_dfu->dfu_state);
+
+#ifdef CONFIG_DFU_TIMEOUT
+	/* Forbid aborting by timeout. Next dfu command may update this */
+	dfu_set_timeout(0);
+#endif
 
 	if (req_type == USB_TYPE_STANDARD) {
 		if (ctrl->bRequest == USB_REQ_GET_DESCRIPTOR &&

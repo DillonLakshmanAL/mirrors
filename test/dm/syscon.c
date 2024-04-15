@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2015 Google, Inc
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
@@ -10,9 +9,8 @@
 #include <regmap.h>
 #include <asm/test.h>
 #include <dm/test.h>
+#include <linux/err.h>
 #include <test/ut.h>
-
-DECLARE_GLOBAL_DATA_PTR;
 
 /* Base test of system controllers */
 static int dm_test_syscon_base(struct unit_test_state *uts)
@@ -66,6 +64,13 @@ static int dm_test_syscon_by_phandle(struct unit_test_state *uts)
 	ut_assertok_ptr(syscon_regmap_lookup_by_phandle(dev,
 							"second-sys-ctrl"));
 	map = syscon_regmap_lookup_by_phandle(dev, "second-sys-ctrl");
+	ut_assert(map);
+	ut_assert(!IS_ERR(map));
+	ut_asserteq(4, map->range_count);
+
+	ut_assertok_ptr(syscon_regmap_lookup_by_phandle(dev,
+							"third-syscon"));
+	map = syscon_regmap_lookup_by_phandle(dev, "third-syscon");
 	ut_assert(map);
 	ut_assert(!IS_ERR(map));
 	ut_asserteq(4, map->range_count);

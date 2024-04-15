@@ -2,9 +2,10 @@
 #ifndef __UFS_H
 #define __UFS_H
 
-#include "unipro.h"
+#include <asm/io.h>
+#include <dm.h>
 
-struct udevice;
+#include "unipro.h"
 
 #define UFS_CDB_SIZE	16
 #define UPIU_TRANSACTION_UIC_CMD 0x1F
@@ -898,7 +899,7 @@ enum {
 #define RESET_LEVEL			0xFF
 
 #define ATTR_SET_TYPE_MASK		UFS_MASK(0xFF, 16)
-#define CFG_RESULT_CODE_MASK		0xFF
+#define CONFIG_RESULT_CODE_MASK		0xFF
 #define GENERIC_ERROR_CODE_MASK		0xFF
 
 #define ufshcd_writel(hba, val, reg)   \

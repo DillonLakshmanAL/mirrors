@@ -1,15 +1,12 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2017 Fuzhou Rockchip Electronics Co., Ltd.
- *
- * SPDX-License-Identifier:     GPL-2.0+
  */
 
 /dts-v1/;
 #include <dt-bindings/pwm/pwm.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 #include "rk3399.dtsi"
-#include "rk3399-sdram-ddr3-1600.dtsi"
-#include "rk3399-u-boot.dtsi"
 
 / {
 	model = "Firefly-RK3399 Board";
@@ -17,7 +14,6 @@
 
 	chosen {
 		stdout-path = &uart2;
-		u-boot,spl-boot-order = &sdmmc, &sdhci;
 	};
 
 	backlight: backlight {
@@ -644,6 +640,10 @@
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_xfer &uart0_cts>;
+	status = "okay";
+};
+
+&uart2 {
 	status = "okay";
 };
 

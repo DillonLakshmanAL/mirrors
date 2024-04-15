@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * (C) Copyright 2000
  * Wolfgang Denk, DENX Software Engineering, wd@denx.de.
@@ -5,24 +6,21 @@
  * Add to readline cmdline-editing by
  * (C) Copyright 2005
  * JinHua Luo, GuangDong Linux Center, <luo.jinhua@gd-linux.com>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
 #include <cli.h>
 #include <cli_hush.h>
+#include <command.h>
 #include <console.h>
+#include <env.h>
 #include <fdtdec.h>
+#include <hang.h>
 #include <malloc.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
-__weak int board_run_command(const char *cmdline)
-{
-	return cli_simple_run_command_list((char *)cmdline, 0);
-}
-
+#ifdef CONFIG_CMDLINE
 /*
  * Run a command using the selected parser.
  *
@@ -32,7 +30,7 @@ __weak int board_run_command(const char *cmdline)
  */
 int run_command(const char *cmd, int flag)
 {
-#ifndef CONFIG_HUSH_PARSER
+#if !CONFIG_IS_ENABLED(HUSH_PARSER)
 	/*
 	 * cli_run_command can return 0 or 1 for success, so clean up
 	 * its result.
@@ -73,6 +71,14 @@ int run_command_repeatable(const char *cmd, int flag)
 	return 0;
 #endif
 }
+#else
+__weak int board_run_command(const char *cmdline)
+{
+	printf("## Commands are disabled. Please enable CONFIG_CMDLINE.\n");
+
+	return 1;
+}
+#endif /* CONFIG_CMDLINE */
 
 int run_command_list(const char *cmd, int len, int flag)
 {
@@ -215,9 +221,9 @@ err:
 }
 #endif /* CONFIG_IS_ENABLED(OF_CONTROL) */
 
-#ifndef CONFIG_CONSOLE_DISABLE_CLI
 void cli_loop(void)
 {
+	bootstage_mark(BOOTSTAGE_ID_ENTER_CLI_LOOP);
 #ifdef CONFIG_HUSH_PARSER
 	parse_file_outer();
 	/* This point is never reached */
@@ -228,9 +234,6 @@ void cli_loop(void)
 	printf("## U-Boot command line is disabled. Please enable CONFIG_CMDLINE\n");
 #endif /*CONFIG_HUSH_PARSER*/
 }
-#else
-void cli_loop(void) { }
-#endif
 
 void cli_init(void)
 {

@@ -448,8 +448,6 @@ static inline void usb_ep_fifo_flush(struct usb_ep *ep)
 
 
 /*-------------------------------------------------------------------------*/
-#define USB_DEFAULT_U1_DEV_EXIT_LAT	0x01	/* Less then 1 microsec */
-#define USB_DEFAULT_U2_DEV_EXIT_LAT	0x1F4	/* Less then 500 microsec */
 
 struct usb_gadget;
 struct usb_gadget_driver;
@@ -578,15 +576,6 @@ static inline int gadget_is_dualspeed(struct usb_gadget *g)
 }
 
 /**
- * gadget_is_superspeed() - return true if the hardware handles superspeed
- * @g: controller that might support superspeed
- */
-static inline int gadget_is_superspeed(struct usb_gadget *g)
-{
-	return g->max_speed >= USB_SPEED_SUPER;
-}
-
-/**
  * gadget_is_otg - return true iff the hardware is OTG-ready
  * @g: controller that might have a Mini-AB connector
  *
@@ -600,6 +589,15 @@ static inline int gadget_is_otg(struct usb_gadget *g)
 #else
 	return 0;
 #endif
+}
+
+/**
+ * gadget_is_superspeed() - return true if the hardware handles superspeed
+ * @g: controller that might support superspeed
+ */
+static inline int gadget_is_superspeed(struct usb_gadget *g)
+{
+	return g->max_speed >= USB_SPEED_SUPER;
 }
 
 /**

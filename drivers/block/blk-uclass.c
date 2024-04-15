@@ -1,16 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (C) 2016 Google, Inc
  * Written by Simon Glass <sjg@chromium.org>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
 #include <blk.h>
 #include <dm.h>
+#include <malloc.h>
 #include <dm/device-internal.h>
 #include <dm/lists.h>
 #include <dm/uclass-internal.h>
+#include <linux/err.h>
 
 static const char *if_typename_str[IF_TYPE_COUNT] = {
 	[IF_TYPE_IDE]		= "ide",
@@ -22,13 +23,9 @@ static const char *if_typename_str[IF_TYPE_COUNT] = {
 	[IF_TYPE_SD]		= "sd",
 	[IF_TYPE_SATA]		= "sata",
 	[IF_TYPE_HOST]		= "host",
-	[IF_TYPE_SYSTEMACE]	= "ace",
 	[IF_TYPE_NVME]		= "nvme",
-	[IF_TYPE_RKNAND]	= "rknand",
-	[IF_TYPE_SPINAND]	= "spinand",
-	[IF_TYPE_SPINOR]	= "spinor",
-	[IF_TYPE_RAMDISK]	= "ramdisk",
-	[IF_TYPE_MTD]		= "mtd",
+	[IF_TYPE_EFI]		= "efi",
+	[IF_TYPE_VIRTIO]	= "virtio",
 };
 
 static enum uclass_id if_type_uclass_id[IF_TYPE_COUNT] = {
@@ -42,15 +39,11 @@ static enum uclass_id if_type_uclass_id[IF_TYPE_COUNT] = {
 	[IF_TYPE_SATA]		= UCLASS_AHCI,
 	[IF_TYPE_HOST]		= UCLASS_ROOT,
 	[IF_TYPE_NVME]		= UCLASS_NVME,
-	[IF_TYPE_RKNAND]	= UCLASS_RKNAND,
-	[IF_TYPE_SPINAND]	= UCLASS_SPI_FLASH,
-	[IF_TYPE_SPINOR]	= UCLASS_SPI_FLASH,
-	[IF_TYPE_RAMDISK]	= UCLASS_RAMDISK,
-	[IF_TYPE_MTD]		= UCLASS_MTD,
-	[IF_TYPE_SYSTEMACE]	= UCLASS_INVALID,
+	[IF_TYPE_EFI]		= UCLASS_EFI,
+	[IF_TYPE_VIRTIO]	= UCLASS_VIRTIO,
 };
 
-enum if_type if_typename_to_iftype(const char *if_typename)
+static enum if_type if_typename_to_iftype(const char *if_typename)
 {
 	int i;
 
@@ -126,31 +119,9 @@ struct blk_desc *blk_get_devnum_by_typename(const char *if_typename, int devnum)
 
 		/* Find out the parent device uclass */
 		if (device_get_uclass_id(dev->parent) != uclass_id) {
-#ifdef CONFIG_MTD_BLK
-			/*
-			 * The normal mtd block attachment steps are
-			 * UCLASS_BLK -> UCLASS_MTD -> UCLASS_(SPI or NAND).
-			 * Since the spi flash frame is attached to
-			 * UCLASS_SPI_FLASH, this make mistake to find
-			 * the UCLASS_MTD when find the mtd block device.
-			 * Fix it here when enable CONFIG_MTD_BLK.
-			 */
-			if (device_get_uclass_id(dev->parent) == UCLASS_SPI_FLASH &&
-			    if_type == IF_TYPE_MTD &&
-			    devnum == BLK_MTD_SPI_NOR) {
-				debug("Fix the spi flash uclass different\n");
-			} else {
-				debug("%s: parent uclass %d, this dev %d\n",
-				      __func__,
-				      device_get_uclass_id(dev->parent),
-				      uclass_id);
-				continue;
-			}
-#else
 			debug("%s: parent uclass %d, this dev %d\n", __func__,
 			      device_get_uclass_id(dev->parent), uclass_id);
 			continue;
-#endif
 		}
 
 		if (device_probe(dev))
@@ -160,6 +131,29 @@ struct blk_desc *blk_get_devnum_by_typename(const char *if_typename, int devnum)
 		return desc;
 	}
 	debug("%s: No device found\n", __func__);
+
+	return NULL;
+}
+
+/**
+ * blk_get_by_device() - Get the block device descriptor for the given device
+ * @dev:	Instance of a storage device
+ *
+ * Return: With block device descriptor on success , NULL if there is no such
+ *	   block device.
+ */
+struct blk_desc *blk_get_by_device(struct udevice *dev)
+{
+	struct udevice *child_dev;
+
+	device_foreach_child(child_dev, dev) {
+		if (device_get_uclass_id(child_dev) != UCLASS_BLK)
+			continue;
+
+		return dev_get_uclass_platdata(child_dev);
+	}
+
+	debug("%s: No block device found\n", __func__);
 
 	return NULL;
 }
@@ -342,18 +336,6 @@ ulong blk_write_devnum(enum if_type if_type, int devnum, lbaint_t start,
 	return blk_dwrite(desc, start, blkcnt, buffer);
 }
 
-ulong blk_erase_devnum(enum if_type if_type, int devnum, lbaint_t start,
-		       lbaint_t blkcnt)
-{
-	struct blk_desc *desc;
-	int ret;
-
-	ret = get_desc(if_type, devnum, &desc);
-	if (ret)
-		return ret;
-	return blk_derase(desc, start, blkcnt);
-}
-
 int blk_select_hwpart(struct udevice *dev, int hwpart)
 {
 	const struct blk_ops *ops = blk_get_ops(dev);
@@ -493,15 +475,6 @@ unsigned long blk_derase(struct blk_desc *block_dev, lbaint_t start,
 	return ops->erase(dev, start, blkcnt);
 }
 
-int blk_prepare_device(struct udevice *dev)
-{
-	struct blk_desc *desc = dev_get_uclass_platdata(dev);
-
-	part_init(desc);
-
-	return 0;
-}
-
 int blk_get_from_parent(struct udevice *parent, struct udevice **devp)
 {
 	struct udevice *dev;
@@ -548,7 +521,7 @@ int blk_find_max_devnum(enum if_type if_type)
 	return max_devnum;
 }
 
-static int blk_next_free_devnum(enum if_type if_type)
+int blk_next_free_devnum(enum if_type if_type)
 {
 	int ret;
 
@@ -578,17 +551,7 @@ static int blk_claim_devnum(enum if_type if_type, int devnum)
 
 			if (next < 0)
 				return next;
-#ifdef CONFIG_USING_KERNEL_DTB_V2
-			/*
-			 * Not allow devnum to be forced distributed.
-			 * See commit (e48eeb9ea3 dm: blk: Improve block device claiming).
-			 *
-			 * fix like: "Device 'dwmmc@fe2b0000': seq 0 is in use by 'sdhci@fe310000'"
-			 */
-			if (!(gd->flags & GD_FLG_KDTB_READY))
-#endif
 			desc->devnum = next;
-
 			return 0;
 		}
 	}
@@ -598,7 +561,7 @@ static int blk_claim_devnum(enum if_type if_type, int devnum)
 
 int blk_create_device(struct udevice *parent, const char *drv_name,
 		      const char *name, int if_type, int devnum, int blksz,
-		      lbaint_t size, struct udevice **devp)
+		      lbaint_t lba, struct udevice **devp)
 {
 	struct blk_desc *desc;
 	struct udevice *dev;
@@ -619,7 +582,8 @@ int blk_create_device(struct udevice *parent, const char *drv_name,
 	desc = dev_get_uclass_platdata(dev);
 	desc->if_type = if_type;
 	desc->blksz = blksz;
-	desc->lba = size / blksz;
+	desc->log2blksz = LOG2(desc->blksz);
+	desc->lba = lba;
 	desc->part_type = PART_TYPE_UNKNOWN;
 	desc->bdev = dev;
 	desc->devnum = devnum;
@@ -630,7 +594,7 @@ int blk_create_device(struct udevice *parent, const char *drv_name,
 
 int blk_create_devicef(struct udevice *parent, const char *drv_name,
 		       const char *name, int if_type, int devnum, int blksz,
-		       lbaint_t size, struct udevice **devp)
+		       lbaint_t lba, struct udevice **devp)
 {
 	char dev_name[30], *str;
 	int ret;
@@ -641,7 +605,7 @@ int blk_create_devicef(struct udevice *parent, const char *drv_name,
 		return -ENOMEM;
 
 	ret = blk_create_device(parent, drv_name, str, if_type, devnum,
-				blksz, size, devp);
+				blksz, lba, devp);
 	if (ret) {
 		free(str);
 		return ret;
@@ -676,8 +640,20 @@ int blk_unbind_all(int if_type)
 	return 0;
 }
 
+static int blk_post_probe(struct udevice *dev)
+{
+#if defined(CONFIG_PARTITIONS) && defined(CONFIG_HAVE_BLOCK_DEVICE)
+	struct blk_desc *desc = dev_get_uclass_platdata(dev);
+
+	part_init(desc);
+#endif
+
+	return 0;
+}
+
 UCLASS_DRIVER(blk) = {
 	.id		= UCLASS_BLK,
 	.name		= "blk",
+	.post_probe	= blk_post_probe,
 	.per_device_platdata_auto_alloc_size = sizeof(struct blk_desc),
 };

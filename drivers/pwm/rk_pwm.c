@@ -1,20 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2016 Google, Inc
  * Written by Simon Glass <sjg@chromium.org>
- *
- * SPDX-License-Identifier:	GPL-2.0+
  */
 
 #include <common.h>
 #include <clk.h>
 #include <div64.h>
 #include <dm.h>
-#include <dm/pinctrl.h>
 #include <pwm.h>
 #include <regmap.h>
 #include <syscon.h>
 #include <asm/io.h>
-#include <asm/arch/pwm.h>
+#include <asm/arch-rockchip/pwm.h>
 #include <power/regulator.h>
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -24,7 +22,6 @@ struct rockchip_pwm_data {
 	unsigned int prescaler;
 	bool supports_polarity;
 	bool supports_lock;
-	bool vop_pwm;
 	u32 enable_conf;
 	u32 enable_conf_mask;
 };
@@ -33,7 +30,6 @@ struct rk_pwm_priv {
 	fdt_addr_t base;
 	ulong freq;
 	u32 conf_polarity;
-	bool vop_pwm_en; /* indicate voppwm mirror register state */
 	const struct rockchip_pwm_data *data;
 };
 
@@ -66,13 +62,6 @@ static int rk_pwm_set_config(struct udevice *dev, uint channel, uint period_ns,
 	debug("%s: period_ns=%u, duty_ns=%u\n", __func__, period_ns, duty_ns);
 
 	ctrl = readl(priv->base + regs->ctrl);
-	if (priv->data->vop_pwm) {
-		if (priv->vop_pwm_en)
-			ctrl |= RK_PWM_ENABLE;
-		else
-			ctrl &= ~RK_PWM_ENABLE;
-	}
-
 	/*
 	 * Lock the period and duty of previous configuration, then
 	 * change the duty and period, that would not be effective.
@@ -82,10 +71,10 @@ static int rk_pwm_set_config(struct udevice *dev, uint channel, uint period_ns,
 		writel(ctrl, priv->base + regs->ctrl);
 	}
 
-	period = lldiv((uint64_t)(priv->freq / 1000) * period_ns,
-		       priv->data->prescaler * 1000000);
-	duty = lldiv((uint64_t)(priv->freq / 1000) * duty_ns,
-		     priv->data->prescaler * 1000000);
+	period = lldiv((uint64_t)priv->freq * period_ns,
+		       priv->data->prescaler * 1000000000);
+	duty = lldiv((uint64_t)priv->freq * duty_ns,
+		     priv->data->prescaler * 1000000000);
 
 	writel(period, priv->base + regs->period);
 	writel(duty, priv->base + regs->duty);
@@ -126,11 +115,6 @@ static int rk_pwm_set_enable(struct udevice *dev, uint channel, bool enable)
 		ctrl &= ~priv->data->enable_conf;
 
 	writel(ctrl, priv->base + regs->ctrl);
-	if (priv->data->vop_pwm)
-		priv->vop_pwm_en = enable;
-
-	if (enable)
-		pinctrl_select_state(dev, "active");
 
 	return 0;
 }
@@ -156,12 +140,7 @@ static int rk_pwm_probe(struct udevice *dev)
 		return -EINVAL;
 	}
 
-	ret = clk_get_rate(&clk);
-	if (ret < 0) {
-		debug("%s pwm get clock rate fail!\n", __func__);
-		return -EINVAL;
-	}
-	priv->freq = ret;
+	priv->freq = clk_get_rate(&clk);
 	priv->data = (struct rockchip_pwm_data *)dev_get_driver_data(dev);
 
 	if (priv->data->supports_polarity)
@@ -186,7 +165,6 @@ static const struct rockchip_pwm_data pwm_data_v1 = {
 	.prescaler = 2,
 	.supports_polarity = false,
 	.supports_lock = false,
-	.vop_pwm = false,
 	.enable_conf = PWM_CTRL_OUTPUT_EN | PWM_CTRL_TIMER_EN,
 	.enable_conf_mask = BIT(1) | BIT(3),
 };
@@ -201,23 +179,6 @@ static const struct rockchip_pwm_data pwm_data_v2 = {
 	.prescaler = 1,
 	.supports_polarity = true,
 	.supports_lock = false,
-	.vop_pwm = false,
-	.enable_conf = PWM_OUTPUT_LEFT | PWM_LP_DISABLE | RK_PWM_ENABLE |
-		       PWM_CONTINUOUS,
-	.enable_conf_mask = GENMASK(2, 0) | BIT(5) | BIT(8),
-};
-
-static const struct rockchip_pwm_data pwm_data_vop = {
-	.regs = {
-		.duty = 0x08,
-		.period = 0x04,
-		.cntr = 0x0c,
-		.ctrl = 0x00,
-	},
-	.prescaler = 1,
-	.supports_polarity = true,
-	.supports_lock = false,
-	.vop_pwm = true,
 	.enable_conf = PWM_OUTPUT_LEFT | PWM_LP_DISABLE | RK_PWM_ENABLE |
 		       PWM_CONTINUOUS,
 	.enable_conf_mask = GENMASK(2, 0) | BIT(5) | BIT(8),
@@ -233,7 +194,6 @@ static const struct rockchip_pwm_data pwm_data_v3 = {
 	.prescaler = 1,
 	.supports_polarity = true,
 	.supports_lock = true,
-	.vop_pwm = false,
 	.enable_conf = PWM_OUTPUT_LEFT | PWM_LP_DISABLE | RK_PWM_ENABLE |
 		       PWM_CONTINUOUS,
 	.enable_conf_mask = GENMASK(2, 0) | BIT(5) | BIT(8),
@@ -243,8 +203,6 @@ static const struct udevice_id rk_pwm_ids[] = {
 	{ .compatible = "rockchip,rk2928-pwm", .data = (ulong)&pwm_data_v1},
 	{ .compatible = "rockchip,rk3288-pwm", .data = (ulong)&pwm_data_v2},
 	{ .compatible = "rockchip,rk3328-pwm", .data = (ulong)&pwm_data_v3},
-	{ .compatible = "rockchip,vop-pwm", .data = (ulong)&pwm_data_vop},
-	{ .compatible = "rockchip,rk3399-pwm", .data = (ulong)&pwm_data_v2},
 	{ }
 };
 

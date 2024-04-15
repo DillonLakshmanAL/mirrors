@@ -5,7 +5,6 @@
 #include <linux/types.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
-#include <stacktrace.h>
 
 struct unused {};
 typedef struct unused unused_t;
@@ -43,6 +42,25 @@ extern struct p_current *current;
 	printf(fmt, ##args)
 #define dev_warn(dev, fmt, args...)		\
 	printf(fmt, ##args)
+
+#define netdev_emerg(dev, fmt, args...)		\
+	printf(fmt, ##args)
+#define netdev_alert(dev, fmt, args...)		\
+	printf(fmt, ##args)
+#define netdev_crit(dev, fmt, args...)		\
+	printf(fmt, ##args)
+#define netdev_err(dev, fmt, args...)		\
+	printf(fmt, ##args)
+#define netdev_warn(dev, fmt, args...)		\
+	printf(fmt, ##args)
+#define netdev_notice(dev, fmt, args...)	\
+	printf(fmt, ##args)
+#define netdev_info(dev, fmt, args...)		\
+	printf(fmt, ##args)
+#define netdev_dbg(dev, fmt, args...)		\
+	debug(fmt, ##args)
+#define netdev_vdbg(dev, fmt, args...)		\
+	debug(fmt, ##args)
 
 #define GFP_ATOMIC ((gfp_t) 0)
 #define GFP_KERNEL ((gfp_t) 0)
@@ -105,7 +123,10 @@ static inline void kmem_cache_destroy(struct kmem_cache *cachep)
 
 #define KERNEL_VERSION(a,b,c)	(((a) << 16) + ((b) << 8) + (c))
 
+/* This is also defined in ARMv8's mmu.h */
+#ifndef PAGE_SIZE
 #define PAGE_SIZE	4096
+#endif
 
 /* drivers/char/random.c */
 #define get_random_bytes(...)
@@ -194,6 +215,7 @@ typedef unsigned long blkcnt_t;
 #define init_waitqueue_head(...)	do { } while (0)
 #define wait_event_interruptible(...)	0
 #define wake_up_interruptible(...)	do { } while (0)
+#define dump_stack(...)			do { } while (0)
 
 #define task_pid_nr(x)			0
 #define set_freezable(...)		do { } while (0)
